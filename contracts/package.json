@@ -1,0 +1,17 @@
+{
+  "name": "algoease-contracts",
+  "version": "1.0.0",
+  "description": "AlgoEase smart contracts",
+  "main": "algoease_contract.py",
+  "scripts": {
+    "compile": "python algoease_contract.py",
+    "test": "python test_contract.py"
+  },
+  "dependencies": {
+    "pyteal": "^0.20.0",
+    "algosdk": "^2.6.0"
+  },
+  "devDependencies": {
+    "pytest": "^7.4.0"
+  }
+}
