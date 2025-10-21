@@ -1,144 +1,159 @@
-# 🛡️ GenProof
+# AlgoEase — Freelance & Bounty Payment Platform on Algorand
 
-**Privacy-Preserving Credential Verification on Algorand using State Proofs + PyTEAL**
-
-GenProof enables users to prove identity attributes—such as age, citizenship, or qualification—**without revealing sensitive personal information**. Built on **Algorand**, GenProof leverages **State Proofs** and **TEAL logic (via PyTEAL)** to provide a lightweight, verifiable, and reusable credential attestation system.
+A trustless, decentralized escrow system built on Algorand that automatically releases payments based on predefined conditions. By replacing human middlemen with smart contracts, AlgoEase enables fast, secure, transparent, and low‑cost payments between clients and freelancers.
 
 ---
 
-## ► Problem
+## Table of Contents
 
-Traditional identity verification systems require users to reveal more information than necessary. Whether proving eligibility for a financial service or accessing an age-restricted platform, users are forced to disclose full identity documents—creating risks of data leaks, centralization, and non-compliance with privacy regulations.
-
-**Users should be able to prove facts, not reveal documents.**
-
----
-
-## ► Solution: GenProof
-
-GenProof provides a minimal disclosure verification protocol on Algorand:
-
-- A credential is verified **off-chain** by a trusted issuer.
-- The issuer signs an attestation (e.g., `"Age >= 18"`, `"Citizenship = IN"`).
-- A **hashed commitment** is stored on Algorand using a **PyTEAL-based smart contract**.
-- Applications can **verify eligibility using TEAL logic** without accessing raw credentials.
-
-This enables trustless verification while preserving full privacy.
-
----
-
-## ► How It Works
-
-| Step | Process | On-Chain Interaction |
-|------|---------|---------------------|
-| 1. Off-Chain Verification | A user verifies credentials with an issuer | No |
-| 2. Credential Attestation | Issuer signs a structured claim (JSON → hash) | No |
-| 3. On-Chain Commitment | Hashed claim is stored in GenProof Smart Contract | Yes |
-| 4. Verification by Apps | dApps read attestation validity using TEAL logic | Yes |
+- [Overview](#overview)
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Architecture](#architecture)
+- [Why Algorand](#why-algorand)
+- [Roadmap](#roadmap)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Installation](#installation)
+    - [Environment Variables](#environment-variables)
+    - [Running Locally](#running-locally)
+    - [Testing](#testing)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
 
 ---
 
-## ► Features
+## Overview
 
-| Feature | Description |
-|---------|-------------|
-| State-Proof-Based Attestations | Credential commitments stored via PyTEAL smart contract |
-| Selective Disclosure | Only proof-of-fact is revealed, never raw data |
-| Reusable Credentials | Once verified, reuse across multiple platforms |
-| Wallet Support | Pera Wallet + WalletConnect |
-| Gas Efficient | Optimized for Algorand’s low-cost transactions |
+Freelancers and clients today face several challenges:
+
+- Trust issues: Clients may hesitate to pay upfront, freelancers fear non‑payment
+- High platform fees: Centralized marketplaces charge 5–20% per payment
+- Slow payments and manual dispute handling
+
+Solution:
+
+- Trustless escrow via Algorand smart contracts
+- Automatic, condition‑based payouts
+- Low fees and instant settlement
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-```bash
-# Clone the repository
-git clone <repository-url>
-cd GenProof
+- Trustless escrow. Funds are locked in a smart contract until conditions are met
+- Condition‑based payments. Client approval, DAO vote, or oracle‑verified proof
+- Automatic refunds if the deadline passes or work is rejected
+- Global and permissionless. Anyone with an Algorand wallet can participate
+- Low fees and fast finality on Algorand (~0.001 ALGO per tx)
+- Optional arbitration and milestone‑based payouts
 
-# Install dependencies
-pip install pyteal
-npm install
+---
 
-# Compile PyTEAL contracts
-python contracts/compile.py
+## How It Works
 
-# Deploy to Algorand TestNet
-bash scripts/deploy.sh
+1. Client creates a bounty
+    - Inputs: task description, amount, deadline, optional verifier (client, DAO, oracle)
+    - Funds are deposited into a smart contract escrow account
+2. Freelancer accepts the task and optionally submits an on‑chain proof/hash
+3. Verifier reviews
+    - Approve → automatic payout to freelancer
+    - Reject or deadline passes → automatic refund to client
+4. Contract performs inner transactions and updates state to claimed or refunded
+5. Optional escalation via DAO vote or designated arbitrators
 
-# Start the frontend
-npm run dev
+---
 
-```
-📋 Prerequisites
-Python 3.8+
+## Architecture
 
-pip (Python package manager)
+### Smart Contract (PyTeal)
 
-Node.js
+Stores bounty metadata:
 
-Algorand TestNet account
+- Bounty ID
+- Client and freelancer addresses
+- Amount
+- Deadline
+- Status (open, approved, claimed, refunded)
 
-Pera Wallet / WalletConnect
+Core methods:
 
-🏗️ Project Structure
-```bash
-Copy code
-GenProof/
-├── contracts/             # PyTEAL smart contracts
-│   ├── Attestation.py     # Handles credential commitments
-│   └── Approval.teal      # Compiled TEAL logic
-├── frontend/              # Web interface
-│   ├── src/
-│   └── package.json
-├── scripts/               # Deployment utilities
-└── README.md              # Documentation
-```
-🔧 Smart Contract Logic (PyTEAL Overview)
-Store attestation hash mapped to user wallet address
+- `create_bounty()` — Client creates and funds bounty
+- `approve_bounty()` — Verifier approves work
+- `claim()` — Freelancer claims funds
+- `refund()` — Automatic refund if conditions are not met
 
-Allow issuers to submit commitments
+### Frontend
 
-Allow verifying dApps to query credential validity
+- React + Tailwind CSS
+- Wallet integration via WalletConnect, Pera, or AlgoSigner
+- Views: available bounties, accepted tasks, actions (Approve, Claim, Refund)
 
-Optional revocation & expiry support
+### Backend (Optional)
 
-🧪 Testing
-bash
-Copy code
-# Compile contracts
-python contracts/compile.py
+- Node.js or Python for off‑chain metadata, submission storage, and signature helpers
 
-# Run PyTEAL tests
-pytest tests/
-🌐 Algorand TestNet Configuration
-Parameter	Value
-Network	TestNet
-Explorer	https://testnet.algoexplorer.io
-Dispenser	https://bank.testnet.algorand.network
+### Blockchain Layer
 
-🔒 Security Features
-No raw credential storage
+- Algorand enforces conditions, stores state, and executes releases/refunds
 
-Issuer-controlled attestation
+---
 
-Immutable audit trail
+## Why Algorand
 
-TEAL-based trustless verification
+| Feature | Advantage for AlgoEase |
+| --- | --- |
+| Smart Contracts (PyTeal) | Programmable escrow logic |
+| Inner Transactions | Secure fund release within the contract |
+| Fast Finality | Instant task settlement |
+| Low Fees | Minimal cost for freelancers and clients |
+| Composability | Easy DAO, oracle, or milestone integration |
+| Global and Permissionless | Anyone with a wallet can participate |
 
-📚 Documentation
-https://developer.algorand.org/
+---
 
-https://pyteal.readthedocs.io
+## Roadmap
 
-https://developer.algorand.org/articles/state-proofs/
+### Phase 1 — MVP
 
-🤝 Contributing
-Fork the repository
+- Single bounty per contract
+- Client approval only
+- Simple React UI: Create → Accept → Approve → Claim
+- Test on Algorand TestNet
 
-Create a feature branch
+### Phase 2 — Multi‑Task and Multi‑User
 
-Commit changes with tests
+- Multiple active bounties per contract
+- Bounty indexing on‑chain or via off‑chain DB
+- Dashboards with task statuses
 
-Submit a pull request
+### Phase 3 — Advanced Features
+
+- DAO and community verification
+- Milestone‑based payouts
+- Multi‑asset payments (ALGO + ASA)
+- Reputation scoring for freelancers
+- Dispute escalation logic
+
+---
+
+## Tech Stack
+
+- Smart Contracts: PyTeal on Algorand
+- Frontend: React, Tailwind CSS
+- Wallets: WalletConnect, Pera, AlgoSigner
+- Backend (optional): Node.js or Python
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- Python 3.10+ (if building contracts or backend helpers)
+- Algorand Sandbox or access to TestNet
+- One of: Pera Wallet, WalletConnect, or AlgoSigner
