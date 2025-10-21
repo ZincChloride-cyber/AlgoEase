@@ -13,16 +13,6 @@ A trustless, decentralized escrow system built on Algorand that automatically re
 - [Why Algorand](#why-algorand)
 - [Roadmap](#roadmap)
 - [Tech Stack](#tech-stack)
-- [Getting Started](#getting-started)
-    - [Prerequisites](#prerequisites)
-    - [Installation](#installation)
-    - [Environment Variables](#environment-variables)
-    - [Running Locally](#running-locally)
-    - [Testing](#testing)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [License](#license)
-- [Contact](#contact)
 
 ---
 
@@ -157,3 +147,96 @@ Core methods:
 - Python 3.10+ (if building contracts or backend helpers)
 - Algorand Sandbox or access to TestNet
 - One of: Pera Wallet, WalletConnect, or AlgoSigner
+
+### Installation
+
+```bash
+# Clone the repo
+git clone <YOUR_REPO_URL>
+cd algoease
+
+# Frontend
+cd frontend
+npm install
+
+# Contracts (PyTeal)
+cd ../contracts
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Environment Variables
+
+Create a `.env` in each relevant package.
+
+```
+# frontend/.env
+VITE_ALGOD_NETWORK="testnet"
+VITE_ALGOD_API="<ALGOD_API_URL>"
+VITE_INDEXER_API="<INDEXER_API_URL>"
+```
+
+### Running Locally
+
+```bash
+# Frontend (Vite example)
+cd frontend
+npm run dev
+
+# Compile / deploy contracts (example commands)
+cd ../contracts
+python [compile.py](http://compile.py)
+python [deploy.py](http://deploy.py) --network testnet
+```
+
+### Testing
+
+```bash
+# Frontend tests
+cd frontend
+npm test
+
+# Contract tests (pytest example)
+cd ../contracts
+pytest -q
+```
+
+---
+
+## Project Structure
+
+```
+algoease/
+├─ frontend/          # React + Tailwind app
+├─ contracts/         # PyTeal smart contracts, compile/deploy scripts
+├─ backend/           # Optional API for metadata and submissions
+├─ docs/              # Design notes, ADRs, specs
+└─ [README.md](http://README.md)
+```
+
+---
+
+## Contributing
+
+Contributions are welcome!
+
+- Open an issue describing the bug or feature
+- Fork the repo and create a feature branch
+- Write tests and keep commits scoped
+- Open a pull request and link the issue
+
+Please follow a conventional commit style and include clear reproduction steps when reporting bugs.
+
+---
+
+## License
+
+MIT. See LICENSE for details.
+
+---
+
+## Contact
+
+- Project: AlgoEase
+- Maintainers: Add names and contacts here
+- Issues: Use GitHub Issues on this repository
