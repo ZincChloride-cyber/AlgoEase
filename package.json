@@ -1,0 +1,29 @@
+{
+  "name": "algoease",
+  "version": "1.0.0",
+  "description": "Decentralized escrow platform on Algorand for freelance payments",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
+    "setup": "npm run install:all && npm run setup:algo"
+  },
+  "keywords": [
+    "algorand",
+    "escrow",
+    "smart-contracts",
+    "defi",
+    "freelance"
+  ],
+  "author": "AlgoEase Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "algosdk": "^3.5.2"
+  }
+}
