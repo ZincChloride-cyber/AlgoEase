@@ -1,14 +1,8 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { useWallet } from '../contexts/WalletContext';
+import WalletConnection from './WalletConnection';
 
 const Header = () => {
-  const { account, isConnected, connectWallet, disconnectWallet, isConnecting } = useWallet();
-
-  const formatAddress = (address) => {
-    if (!address) return '';
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  };
 
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
@@ -45,28 +39,7 @@ const Header = () => {
           </div>
 
           <div className="flex items-center space-x-4">
-            {isConnected ? (
-              <div className="flex items-center space-x-4">
-                <div className="text-sm text-gray-600">
-                  <span className="font-medium">Connected:</span>
-                  <span className="ml-1 font-mono">{formatAddress(account)}</span>
-                </div>
-                <button
-                  onClick={disconnectWallet}
-                  className="btn-outline text-sm"
-                >
-                  Disconnect
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={connectWallet}
-                disabled={isConnecting}
-                className="btn-primary"
-              >
-                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-              </button>
-            )}
+            <WalletConnection />
           </div>
         </div>
       </div>

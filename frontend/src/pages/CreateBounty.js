@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useWallet } from '../contexts/WalletContext';
 
 const CreateBounty = () => {
-  const { isConnected } = useWallet();
+  const { isConnected, account, createBounty, contractState } = useWallet();
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -10,6 +10,8 @@ const CreateBounty = () => {
     deadline: '',
     verifier: ''
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -19,9 +21,44 @@ const CreateBounty = () => {
       return;
     }
 
-    // TODO: Implement bounty creation logic
-    console.log('Creating bounty:', formData);
-    alert('Bounty creation will be implemented with smart contract integration');
+    // Check if there's already an active bounty
+    if (contractState && contractState.status !== 3 && contractState.status !== 4) {
+      alert('There is already an active bounty. Please wait for it to be completed or refunded.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError('');
+
+    try {
+      const verifierAddress = formData.verifier || account;
+      
+      const txId = await createBounty(
+        parseFloat(formData.amount),
+        formData.deadline,
+        formData.description,
+        verifierAddress
+      );
+      
+      // Reset form on success
+      setFormData({
+        title: '',
+        description: '',
+        amount: '',
+        deadline: '',
+        verifier: ''
+      });
+      
+      alert(`Bounty created successfully! Transaction ID: ${txId}`);
+      // Redirect to bounties list
+      window.location.href = '/bounties';
+      
+    } catch (error) {
+      console.error('Error creating bounty:', error);
+      setSubmitError(error.message || 'Failed to create bounty. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleChange = (e) => {
@@ -52,6 +89,12 @@ const CreateBounty = () => {
       <div className="card">
         <h1 className="text-3xl font-bold mb-6">Create New Bounty</h1>
         
+        {submitError && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-600">{submitError}</p>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-2">
@@ -141,13 +184,15 @@ const CreateBounty = () => {
             <button
               type="submit"
               className="btn-primary flex-1"
+              disabled={isSubmitting}
             >
-              Create Bounty
+              {isSubmitting ? 'Creating...' : 'Create Bounty'}
             </button>
             <button
               type="button"
               className="btn-outline flex-1"
               onClick={() => window.history.back()}
+              disabled={isSubmitting}
             >
               Cancel
             </button>

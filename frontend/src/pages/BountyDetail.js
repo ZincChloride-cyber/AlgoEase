@@ -1,39 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
+import contractUtils from '../utils/contractUtils';
 
 const BountyDetail = () => {
   const { id } = useParams();
-  const { account, isConnected } = useWallet();
+  const { 
+    account, 
+    isConnected, 
+    contractState, 
+    isLoadingContract,
+    loadContractState,
+    acceptBounty,
+    approveBounty,
+    claimBounty,
+    refundBounty,
+    canPerformAction
+  } = useWallet();
   const [bounty, setBounty] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  // Mock data for demonstration
+  // Load contract state and set bounty data
   useEffect(() => {
-    const mockBounty = {
-      id: parseInt(id),
-      title: 'Build a React Dashboard Component',
-      description: 'Create a responsive dashboard component with charts and data visualization using React and Tailwind CSS. The component should include:\n\n- Real-time data updates\n- Interactive charts using Chart.js\n- Responsive design for mobile and desktop\n- Dark/light theme toggle\n- Export functionality for reports\n\nPlease ensure the code is well-documented and follows React best practices.',
-      amount: 15.5,
-      deadline: '2024-02-15T23:59:59Z',
-      status: 'open',
-      client: '0x1234567890abcdef1234567890abcdef12345678',
-      createdAt: '2024-01-15T10:00:00Z',
-      requirements: [
-        'React 18+ with TypeScript',
-        'Tailwind CSS for styling',
-        'Chart.js for data visualization',
-        'Responsive design',
-        'Clean, documented code'
-      ],
-      submissions: []
+    const loadBountyData = async () => {
+      try {
+        setLoading(true);
+        await loadContractState();
+        
+        if (contractState) {
+          const bountyData = {
+            id: contractState.bountyCount,
+            title: 'Smart Contract Bounty',
+            description: contractState.taskDescription,
+            amount: contractState.amount,
+            deadline: contractState.deadline,
+            status: contractUtils.getStatusName(contractState.status),
+            client: contractState.clientAddress,
+            freelancer: contractState.freelancerAddress,
+            verifier: contractState.verifierAddress,
+            createdAt: new Date().toISOString(),
+            requirements: [
+              'Complete the task as described',
+              'Submit work for verification',
+              'Meet the deadline requirements'
+            ],
+            submissions: []
+          };
+          setBounty(bountyData);
+        } else {
+          setBounty(null);
+        }
+      } catch (error) {
+        console.error('Failed to load bounty data:', error);
+        setBounty(null);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    setTimeout(() => {
-      setBounty(mockBounty);
-      setLoading(false);
-    }, 1000);
-  }, [id]);
+    loadBountyData();
+  }, [id, contractState, loadContractState]);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -61,22 +88,96 @@ const BountyDetail = () => {
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  const handleAcceptBounty = () => {
+  const handleAcceptBounty = async () => {
     if (!isConnected) {
       alert('Please connect your wallet first');
       return;
     }
-    console.log('Accepting bounty:', id);
-    alert('Bounty acceptance will be implemented with smart contract integration');
+
+    if (!canPerformAction('accept')) {
+      alert('You cannot accept this bounty at this time');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const txId = await acceptBounty();
+      alert(`Bounty accepted successfully! Transaction ID: ${txId}`);
+    } catch (error) {
+      console.error('Failed to accept bounty:', error);
+      alert('Failed to accept bounty: ' + error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  const handleSubmitWork = () => {
+  const handleApproveBounty = async () => {
     if (!isConnected) {
       alert('Please connect your wallet first');
       return;
     }
-    console.log('Submitting work for bounty:', id);
-    alert('Work submission will be implemented with smart contract integration');
+
+    if (!canPerformAction('approve')) {
+      alert('You cannot approve this bounty at this time');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const txId = await approveBounty();
+      alert(`Bounty approved successfully! Transaction ID: ${txId}`);
+    } catch (error) {
+      console.error('Failed to approve bounty:', error);
+      alert('Failed to approve bounty: ' + error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleClaimBounty = async () => {
+    if (!isConnected) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    if (!canPerformAction('claim')) {
+      alert('You cannot claim this bounty at this time');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const txId = await claimBounty();
+      alert(`Bounty claimed successfully! Transaction ID: ${txId}`);
+    } catch (error) {
+      console.error('Failed to claim bounty:', error);
+      alert('Failed to claim bounty: ' + error.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRefundBounty = async () => {
+    if (!isConnected) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    if (!canPerformAction('refund')) {
+      alert('You cannot refund this bounty at this time');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const txId = await refundBounty();
+      alert(`Bounty refunded successfully! Transaction ID: ${txId}`);
+    } catch (error) {
+      console.error('Failed to refund bounty:', error);
+      alert('Failed to refund bounty: ' + error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   if (loading) {
@@ -126,28 +227,40 @@ const BountyDetail = () => {
 
         {/* Action Buttons */}
         <div className="flex space-x-4">
-          {bounty.status === 'open' && (
+          {bounty.status === 'open' && canPerformAction('accept') && (
             <button
               onClick={handleAcceptBounty}
               className="btn-primary"
+              disabled={actionLoading}
             >
-              Accept Bounty
+              {actionLoading ? 'Processing...' : 'Accept Bounty'}
             </button>
           )}
-          {bounty.status === 'accepted' && account === bounty.freelancer && (
+          {bounty.status === 'accepted' && canPerformAction('approve') && (
             <button
-              onClick={handleSubmitWork}
+              onClick={handleApproveBounty}
               className="btn-primary"
+              disabled={actionLoading}
             >
-              Submit Work
+              {actionLoading ? 'Processing...' : 'Approve Work'}
             </button>
           )}
-          {bounty.status === 'approved' && account === bounty.freelancer && (
+          {bounty.status === 'approved' && canPerformAction('claim') && (
             <button
-              onClick={() => console.log('Claim payment')}
+              onClick={handleClaimBounty}
               className="btn-secondary"
+              disabled={actionLoading}
             >
-              Claim Payment
+              {actionLoading ? 'Processing...' : 'Claim Payment'}
+            </button>
+          )}
+          {canPerformAction('refund') && (
+            <button
+              onClick={handleRefundBounty}
+              className="btn-outline"
+              disabled={actionLoading}
+            >
+              {actionLoading ? 'Processing...' : 'Refund Bounty'}
             </button>
           )}
         </div>

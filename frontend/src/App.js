@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { WalletProvider } from './contexts/WalletContext';
 import Header from './components/Header';
@@ -7,6 +7,7 @@ import CreateBounty from './pages/CreateBounty';
 import BountyList from './pages/BountyList';
 import MyBounties from './pages/MyBounties';
 import BountyDetail from './pages/BountyDetail';
+import './utils/walletTest'; // Auto-run wallet tests
 
 
 function App() {

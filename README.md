@@ -1,6 +1,6 @@
-# AlgoEase — Freelance & Bounty Payment Platform on Algorand
+# AlgoEase — Decentralized Freelance Platform on Algorand
 
-A trustless, decentralized escrow system built on Algorand that automatically releases payments based on predefined conditions. By replacing human middlemen with smart contracts, AlgoEase enables fast, secure, transparent, and low‑cost payments between clients and freelancers.
+A trustless escrow system that automatically releases payments using smart contracts. No middlemen, just secure payments between clients and freelancers.
 
 ## Quick Start
 
@@ -9,19 +9,23 @@ A trustless, decentralized escrow system built on Algorand that automatically re
    npm run install:all
    ```
 
-2. **Set up AlgoKit:**
+2. **Start the app:**
    ```bash
-   npm run setup:algo
+   cd frontend && npm start
    ```
 
-3. **Start development servers:**
-   ```bash
-   npm run dev
-   ```
+3. **Connect wallet:**
+   - Install Pera Wallet or AlgoSigner
+   - Open `http://localhost:3000`
+   - Click "Connect Wallet"
 
-4. **Open the app:**
-   - Frontend: `http://localhost:3000`
-   - Backend (optional): `http://localhost:5000/health`
+4. **Deploy smart contract (for testing):**
+   ```bash
+   cd contracts
+   python algoease_contract.py
+   # Deploy using AlgoKit or goal CLI
+   # Set REACT_APP_CONTRACT_APP_ID in frontend/.env
+   ```
 
 ## Project Structure
 
@@ -37,11 +41,12 @@ algoease/
 
 ## Features
 
-- ✅ Trustless escrow via Algorand smart contracts
-- ✅ Condition-based automatic payouts
-- ✅ Low fees and instant settlement
-- ✅ Global and permissionless access
-- ✅ Optional arbitration and milestone payouts
+- ✅ **Smart Contract Integration** - Direct blockchain interaction
+- ✅ **Real Wallet Support** - Pera Wallet and AlgoSigner
+- ✅ **Bounty Management** - Create, accept, approve, claim
+- ✅ **Automatic Payments** - No middlemen needed
+- ✅ **Secure Escrow** - Funds held in smart contract
+- ✅ **Easy Setup** - Wallet detection and installation guide
 
 ## Run Scripts
 
@@ -68,9 +73,8 @@ cd frontend && npm run build
 
 - **Smart Contracts:** PyTeal on Algorand
 - **Frontend:** React + Tailwind CSS
-- **Wallets:** WalletConnect, Pera, AlgoSigner
-- **Backend:** Node.js (optional)
-- **Development:** AlgoKit
+- **Wallets:** Pera Wallet, AlgoSigner
+- **Development:** AlgoKit, Webpack
 
 ## Frontend Notes (Algorand SDK + Webpack)
 
@@ -129,49 +133,42 @@ If you upgrade dependencies, keep these notes in mind to avoid Webpack 5 polyfil
 - Backend: copy `backend/env.example` to `backend/.env` and adjust values.
 - Frontend: optionally set `REACT_APP_*` vars for API hosts and contract IDs.
 
-## Smart Contract Architecture
+## Smart Contract
 
-The core escrow contract handles:
-- Bounty creation and funding
-- Work approval by verifiers
-- Automatic payouts and refunds
-- Multi-bounty support
+The escrow contract handles:
+- Create bounties with ALGO payments
+- Accept bounties as freelancers
+- Approve completed work
+- Claim payments automatically
+- Handle refunds
 
-### Build/compile contracts
+### Deploy Contract
 
 ```bash
 cd contracts
 python algoease_contract.py
-```
-
-### Deploy to TestNet
-
-```bash
-python scripts/deploy.py testnet
+# Deploy using AlgoKit or goal CLI
 ```
 
 ## Frontend Features
 
-- Wallet connection and management
-- Bounty creation and browsing
-- Task acceptance and submission
-- Approval and claim workflows
+- **Wallet Connection** - Automatic detection of Pera Wallet and AlgoSigner
+- **Bounty Management** - Create, browse, accept, approve, claim
+- **Real-time Updates** - Live contract state monitoring
+- **Responsive Design** - Works on mobile and desktop
 
 ## Troubleshooting
 
-- Webpack complains about missing Node modules like `stream`, `http`, `assert`:
-  - Confirm the fallbacks exist in `frontend/webpack.config.js` (see above).
-  - Ensure polyfill packages are installed:
-    ```bash
-    cd frontend
-    npm i -D process buffer stream-browserify assert util os-browserify
-    ```
+- **No wallets detected**: Install Pera Wallet or AlgoSigner
+- **Connection failed**: Check wallet permissions and network
+- **Contract not deployed**: Set `REACT_APP_CONTRACT_APP_ID` in `.env`
+- **Webpack errors**: Install polyfills: `npm i -D process buffer stream-browserify assert util os-browserify`
 
-- Algorand SDK import error:
-  - Use the browser build import shown above or update to the latest `algosdk`.
+## Testing
 
-- PowerShell `&&` error when chaining commands:
-  - Run commands separately: `cd frontend` then `npm start`.
+1. **Deploy contract** and set `REACT_APP_CONTRACT_APP_ID` in `.env`
+2. **Connect wallet** (Pera Wallet or AlgoSigner)
+3. **Test bounty flow**: Create → Accept → Approve → Claim
 
 ## Contributing
 
@@ -189,6 +186,11 @@ feat(contracts): add refund path for deadline expiry
 fix(frontend): correct WalletContext algosdk import
 docs(readme): add Git workflow and troubleshooting
 ```
+
+## Documentation
+
+- `SMART_CONTRACT_INTEGRATION.md` - Complete integration guide
+- `docs/` - API and component documentation
 
 ## License
 
