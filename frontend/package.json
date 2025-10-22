@@ -9,6 +9,7 @@
     "@walletconnect/qrcode-modal": "^1.7.0",
     "@walletconnect/web3-provider": "^1.8.0",
     "algosdk": "^2.6.0",
+    "lute-connect": "^1.6.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.8.0",

@@ -242,15 +242,15 @@ def clear_state_program():
 
 if __name__ == "__main__":
     # Compile the contracts
-    with open("contracts/algoease_approval.teal", "w") as f:
+    with open("algoease_approval.teal", "w") as f:
         compiled = compileTeal(approval_program(), mode=Mode.Application, version=8)
         f.write(compiled)
     
-    with open("contracts/algoease_clear.teal", "w") as f:
+    with open("algoease_clear.teal", "w") as f:
         compiled = compileTeal(clear_state_program(), mode=Mode.Application, version=8)
         f.write(compiled)
     
     print("Smart contracts compiled successfully!")
     print("Files created:")
-    print("- contracts/algoease_approval.teal")
-    print("- contracts/algoease_clear.teal")
+    print("- algoease_approval.teal")
+    print("- algoease_clear.teal")

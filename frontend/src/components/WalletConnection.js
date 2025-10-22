@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '../contexts/WalletContext';
 import WalletInstallGuide from './WalletInstallGuide';
+import LuteConnect from 'lute-connect';
 
 const WalletConnection = () => {
   const { 
@@ -23,25 +24,23 @@ const WalletConnection = () => {
       if (window.AlgoEaseWallets && window.AlgoEaseWallets.available) {
         setAvailableWallets(window.AlgoEaseWallets.available);
       } else {
-        // Fallback to direct detection
+        // Check for Lute wallet using lute-connect
         const wallets = [];
         
-        if (window.algorand && window.algorand.pera) {
-          wallets.push({
-            name: 'Pera Wallet',
-            id: 'pera',
-            icon: '🔗',
-            description: 'Official Algorand wallet'
-          });
-        }
-        
-        if (window.AlgoSigner) {
-          wallets.push({
-            name: 'AlgoSigner',
-            id: 'algosigner',
-            icon: '🔐',
-            description: 'Browser extension wallet'
-          });
+        try {
+          // Try to create a LuteConnect instance to check if wallet is available
+          const testLuteWallet = new LuteConnect('Test');
+          if (testLuteWallet) {
+            wallets.push({
+              name: 'Lute Wallet',
+              id: 'lute',
+              icon: '🎵',
+              description: 'Secure Algorand wallet'
+            });
+          }
+        } catch (error) {
+          // Lute wallet not available
+          console.log('Lute wallet not detected');
         }
         
         setAvailableWallets(wallets);
