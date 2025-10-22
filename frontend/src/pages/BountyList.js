@@ -1,53 +1,50 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useWallet } from '../contexts/WalletContext';
 
 const BountyList = () => {
+  const { contractState, loadContractState, isLoadingContract } = useWallet();
   const [bounties, setBounties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
-  // Mock data for demonstration
+  // Load contract state and convert to bounty format
   useEffect(() => {
-    const mockBounties = [
-      {
-        id: 1,
-        title: 'Build a React Dashboard Component',
-        description: 'Create a responsive dashboard component with charts and data visualization using React and Tailwind CSS.',
-        amount: 15.5,
-        deadline: '2024-02-15T23:59:59Z',
-        status: 'open',
-        client: '0x1234...5678',
-        createdAt: '2024-01-15T10:00:00Z'
-      },
-      {
-        id: 2,
-        title: 'Smart Contract Security Audit',
-        description: 'Perform a comprehensive security audit of our PyTeal smart contract for the escrow system.',
-        amount: 50.0,
-        deadline: '2024-02-20T23:59:59Z',
-        status: 'accepted',
-        client: '0x9876...5432',
-        freelancer: '0x1111...2222',
-        createdAt: '2024-01-10T14:30:00Z'
-      },
-      {
-        id: 3,
-        title: 'Frontend Wallet Integration',
-        description: 'Integrate Pera Wallet and WalletConnect into our React frontend for seamless user experience.',
-        amount: 25.0,
-        deadline: '2024-02-10T23:59:59Z',
-        status: 'approved',
-        client: '0x5555...6666',
-        freelancer: '0x7777...8888',
-        createdAt: '2024-01-05T09:15:00Z'
+    const loadBounties = async () => {
+      try {
+        setLoading(true);
+        await loadContractState();
+        
+        if (contractState) {
+          const bountyData = {
+            id: contractState.bountyCount,
+            title: 'Smart Contract Bounty',
+            description: contractState.taskDescription,
+            amount: contractState.amount,
+            deadline: contractState.deadline,
+            status: contractState.status === 0 ? 'open' : 
+                   contractState.status === 1 ? 'accepted' :
+                   contractState.status === 2 ? 'approved' :
+                   contractState.status === 3 ? 'claimed' : 'refunded',
+            client: contractState.clientAddress,
+            freelancer: contractState.freelancerAddress,
+            verifier: contractState.verifierAddress,
+            createdAt: new Date().toISOString()
+          };
+          setBounties([bountyData]);
+        } else {
+          setBounties([]);
+        }
+      } catch (error) {
+        console.error('Error loading bounties:', error);
+        setBounties([]);
+      } finally {
+        setLoading(false);
       }
-    ];
+    };
 
-    setTimeout(() => {
-      setBounties(mockBounties);
-      setLoading(false);
-    }, 1000);
-  }, []);
+    loadBounties();
+  }, [contractState, loadContractState]);
 
   const getStatusColor = (status) => {
     switch (status) {

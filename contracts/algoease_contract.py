@@ -75,16 +75,29 @@ def handle_noop():
     )
 
 def create_bounty():
-    """Create a new bounty"""
-    # Expected arguments: [method, amount, deadline, task_description, verifier_addr]
+    """Create a new bounty — requires grouped payment (2-txn group):
+       Gtxn[0] = Payment from client -> app address (amount)
+       Gtxn[1] = ApplicationCall create_bounty with args
+    """
+    # Expected arguments: [method, amount, deadline, task_description]
+    # and accounts: [verifier_addr]
     return Seq([
-        # Validate arguments
-        Assert(Txn.application_args.length() == Int(5)),
-        
-        # Check if this is the first bounty or if previous bounty is closed
+        Assert(Txn.application_args.length() == Int(4)),
+        Assert(Txn.accounts.length() >= Int(1)),
+
+        # The app-call must be the second txn in a group (index 1)
+        Assert(Global.group_size() == Int(2)),
+        Assert(Txn.group_index() == Int(1)),
+
+        # Verify the payment (first txn in group)
+        Assert(Gtxn[0].type_enum() == TxnType.Payment),
+        Assert(Gtxn[0].sender() == Txn.sender()),  # payment must be from caller
+        Assert(Gtxn[0].receiver() == Global.current_application_address()),
+        Assert(Gtxn[0].amount() == Btoi(Txn.application_args[1])),
+
+        # Now proceed to create bounty (either first bounty or after previous closed)
         If(App.globalGet(BOUNTY_COUNT) == Int(0))
         .Then(
-            # First bounty - initialize
             Seq([
                 App.globalPut(CLIENT_ADDR, Txn.sender()),
                 App.globalPut(AMOUNT, Btoi(Txn.application_args[1])),
@@ -93,28 +106,13 @@ def create_bounty():
                 App.globalPut(VERIFIER_ADDR, Txn.accounts[1]),
                 App.globalPut(STATUS, STATUS_OPEN),
                 App.globalPut(BOUNTY_COUNT, Int(1)),
-                
-                # Send payment to contract
-                InnerTxnBuilder.Begin(),
-                InnerTxnBuilder.SetFields({
-                    TxnField.type_enum: TxnType.Payment,
-                    TxnField.receiver: Global.current_application_address(),
-                    TxnField.amount: Btoi(Txn.application_args[1]),
-                    TxnField.sender: Txn.sender(),
-                }),
-                InnerTxnBuilder.Submit(),
-                
                 Return(Int(1))
             ])
         )
         .Else(
-            # Check if previous bounty is closed
-            If(Or(
-                App.globalGet(STATUS) == STATUS_CLAIMED,
-                App.globalGet(STATUS) == STATUS_REFUNDED
-            ))
+            If(Or(App.globalGet(STATUS) == STATUS_CLAIMED,
+                  App.globalGet(STATUS) == STATUS_REFUNDED))
             .Then(
-                # Create new bounty
                 Seq([
                     App.globalPut(CLIENT_ADDR, Txn.sender()),
                     App.globalPut(AMOUNT, Btoi(Txn.application_args[1])),
@@ -123,23 +121,12 @@ def create_bounty():
                     App.globalPut(VERIFIER_ADDR, Txn.accounts[1]),
                     App.globalPut(STATUS, STATUS_OPEN),
                     App.globalPut(BOUNTY_COUNT, App.globalGet(BOUNTY_COUNT) + Int(1)),
-                    
-                    # Send payment to contract
-                    InnerTxnBuilder.Begin(),
-                    InnerTxnBuilder.SetFields({
-                        TxnField.type_enum: TxnType.Payment,
-                        TxnField.receiver: Global.current_application_address(),
-                        TxnField.amount: Btoi(Txn.application_args[1]),
-                        TxnField.sender: Txn.sender(),
-                    }),
-                    InnerTxnBuilder.Submit(),
-                    
                     Return(Int(1))
                 ])
-            )
-            .Else(Return(Int(0)))  # Previous bounty still active
+            ).Else(Return(Int(0)))
         )
     ])
+
 
 def accept_bounty():
     """Accept a bounty (freelancer commits to the task)"""
