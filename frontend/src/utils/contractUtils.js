@@ -4,7 +4,7 @@ import algosdk from 'algosdk/dist/browser/algosdk.min.js';
 // Contract configuration
 const CONTRACT_CONFIG = {
   // These will be set after contract deployment
-  appId: process.env.REACT_APP_CONTRACT_ID || null,
+  appId: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 748211428,
   // TestNet configuration
   algodClient: new algosdk.Algodv2(
     '',
@@ -58,7 +58,7 @@ class ContractUtils {
 
   // Set contract app ID after deployment
   setAppId(appId) {
-    this.appId = appId;
+    this.appId = parseInt(appId);
   }
 
   // Get current contract app ID
@@ -82,13 +82,15 @@ class ContractUtils {
     if (!this.appId) {
       throw new Error('Contract app ID not set. Please deploy the contract first.');
     }
+    
+    console.log('Creating app call transaction with app ID:', this.appId, 'type:', typeof this.appId);
 
     const suggestedParams = await this.getSuggestedParams();
     
-    const appArgs = [new Uint8Array(Buffer.from(method))];
+    const appArgs = [new Uint8Array(new TextEncoder().encode(method))];
     args.forEach(arg => {
       if (typeof arg === 'string') {
-        appArgs.push(new Uint8Array(Buffer.from(arg)));
+        appArgs.push(new Uint8Array(new TextEncoder().encode(arg)));
       } else if (typeof arg === 'number') {
         appArgs.push(algosdk.encodeUint64(arg));
       } else {
@@ -103,7 +105,7 @@ class ContractUtils {
       suggestedParams,
       appArgs,
       accounts,
-      note: note ? new Uint8Array(Buffer.from(note)) : undefined
+      note: note ? new Uint8Array(new TextEncoder().encode(note)) : undefined
     });
 
     return txn;
@@ -118,7 +120,7 @@ class ContractUtils {
       to: receiver,
       amount: Math.round(amount * 1000000), // Convert ALGO to microALGO
       suggestedParams,
-      note: note ? new Uint8Array(Buffer.from(note)) : undefined
+      note: note ? new Uint8Array(new TextEncoder().encode(note)) : undefined
     });
 
     return txn;
@@ -133,7 +135,15 @@ class ContractUtils {
       // Convert amount to microALGO
       const amountMicroAlgo = Math.round(amount * 1000000);
 
-      // Create the application call transaction
+      // Create payment transaction to send funds to contract (must be first)
+      const paymentTxn = await this.createPaymentTransaction(
+        sender,
+        await this.getContractAddress(),
+        amount, // Amount in ALGO (function will convert to microALGO)
+        'AlgoEase: Bounty Payment'
+      );
+
+      // Create the application call transaction (must be second)
       const appCallTxn = await this.createAppCallTransaction(
         sender,
         CONTRACT_METHODS.CREATE_BOUNTY,
@@ -142,15 +152,10 @@ class ContractUtils {
         'AlgoEase: Create Bounty'
       );
 
-      // Create payment transaction to send funds to contract
-      const paymentTxn = await this.createPaymentTransaction(
-        sender,
-        await this.getContractAddress(),
-        amountMicroAlgo,
-        'AlgoEase: Bounty Payment'
-      );
+      // Assign group ID to transactions
+      algosdk.assignGroupID([paymentTxn, appCallTxn]);
 
-      return [appCallTxn, paymentTxn];
+      return [paymentTxn, appCallTxn];
     } catch (error) {
       console.error('Failed to create bounty transaction:', error);
       throw error;
@@ -236,8 +241,10 @@ class ContractUtils {
     }
 
     try {
-      const appInfo = await this.algodClient.getApplicationByID(this.appId).do();
-      return appInfo.params.creator;
+      // Calculate the application address from the app ID
+      // This is the address where the smart contract funds are stored
+      const appAddress = algosdk.getApplicationAddress(this.appId);
+      return appAddress;
     } catch (error) {
       console.error('Failed to get contract address:', error);
       throw error;
@@ -257,13 +264,13 @@ class ContractUtils {
       // Parse global state
       const parsedState = {};
       globalState.forEach(item => {
-        const key = Buffer.from(item.key, 'base64').toString();
+        const key = atob(item.key); // Decode base64 to string
         const value = item.value;
         
         if (value.type === 1) { // uint64
           parsedState[key] = value.uint;
         } else if (value.type === 2) { // bytes
-          parsedState[key] = Buffer.from(value.bytes, 'base64').toString();
+          parsedState[key] = atob(value.bytes); // Decode base64 to string
         }
       });
 
@@ -369,6 +376,8 @@ class ContractUtils {
   // Submit multiple transactions as a group
   async submitTransactionGroup(signedTxns) {
     try {
+      // The signed transactions are already in the correct format from Lute wallet
+      // We can submit them directly
       const txId = await this.algodClient.sendRawTransaction(signedTxns).do();
       return txId;
     } catch (error) {

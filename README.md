@@ -1,197 +1,132 @@
-# AlgoEase — Decentralized Freelance Platform on Algorand
+# AlgoEase 🚀
+**Decentralized Freelance Platform on Algorand**
 
 A trustless escrow system that automatically releases payments using smart contracts. No middlemen, just secure payments between clients and freelancers.
 
-## Quick Start
+## ✨ Features
 
-1. **Install dependencies:**
-   ```bash
-   npm run install:all
-   ```
+- 🔒 **Smart Contract Escrow** - Funds held securely until work is approved
+- 💰 **Automatic Payments** - No manual intervention needed
+- 🎯 **Bounty System** - Create tasks, freelancers apply, get paid
+- 🔗 **Lute Wallet Integration** - Easy wallet connection
+- 📱 **Modern UI** - Clean, responsive design
 
-2. **Start the app:**
-   ```bash
-   cd frontend && npm start
-   ```
+## 🚀 Quick Start
 
-3. **Connect wallet:**
-   - Install Pera Wallet or AlgoSigner
-   - Open `http://localhost:3000`
-   - Click "Connect Wallet"
-
-4. **Deploy smart contract (for testing):**
-   ```bash
-   cd contracts
-   python algoease_contract.py
-   # Deploy using AlgoKit or goal CLI
-   # Set REACT_APP_CONTRACT_APP_ID in frontend/.env
-   ```
-
-## Project Structure
-
-```
-algoease/
-├── contracts/          # PyTeal smart contracts
-├── frontend/           # React + Tailwind CSS
-├── backend/            # Node.js API (optional)
-├── scripts/            # Deployment and utility scripts
-└── docs/              # Documentation
-```
-
-
-## Features
-
-- ✅ **Smart Contract Integration** - Direct blockchain interaction
-- ✅ **Real Wallet Support** - Pera Wallet and AlgoSigner
-- ✅ **Bounty Management** - Create, accept, approve, claim
-- ✅ **Automatic Payments** - No middlemen needed
-- ✅ **Secure Escrow** - Funds held in smart contract
-- ✅ **Easy Setup** - Wallet detection and installation guide
-
-## Run Scripts
-
-From the repo root:
-
+### 1. Install Dependencies
 ```bash
-# Install everything (root + frontend + backend)
-npm run install:all
-
-# Start both frontend and backend (in parallel)
-npm run dev
-
-# Frontend only
-cd frontend && npm start
-
-# Backend only
-cd backend && npm run dev
-
-# Build frontend for production
-cd frontend && npm run build
+npm install
+cd frontend && npm install
 ```
 
-## Tech Stack
-
-- **Smart Contracts:** PyTeal on Algorand
-- **Frontend:** React + Tailwind CSS
-- **Wallets:** Pera Wallet, AlgoSigner
-- **Development:** AlgoKit, Webpack
-
-## Frontend Notes (Algorand SDK + Webpack)
-
-To ensure the React app works in the browser without Node polyfills:
-
-- Use the browser build of Algorand SDK (already applied):
-
-```javascript
-// frontend/src/contexts/WalletContext.js
-import algosdk from 'algosdk/dist/browser/algosdk.min.js';
-```
-
-- Webpack fallbacks (already configured in `frontend/webpack.config.js`) avoid bundling Node-only modules:
-
-```js
-// frontend/webpack.config.js
-resolve: {
-  fallback: {
-    stream: require.resolve('stream-browserify'),
-    assert: require.resolve('assert'),
-    util: require.resolve('util'),
-    os: require.resolve('os-browserify/browser'),
-    http: false,
-    https: false,
-    fs: false,
-    path: false,
-    crypto: false,
-    buffer: require.resolve('buffer'),
-    process: require.resolve('process/browser'),
-  },
-}
-```
-
-Installed dev polyfills: `process`, `buffer`, `stream-browserify`, `assert`, `util`, `os-browserify`.
-
-If you upgrade dependencies, keep these notes in mind to avoid Webpack 5 polyfill errors.
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- Python 3.10+
-- Algorand Sandbox or TestNet access
-- Wallet: Pera, WalletConnect, or AlgoSigner
-
-### Installation
-
-1. Clone the repository
-2. Run `npm run install:all` to install all dependencies
-3. Set up AlgoKit: `npm run setup:algo`
-4. Start development: `npm run dev`
-
-### Environment files
-
-- Backend: copy `backend/env.example` to `backend/.env` and adjust values.
-- Frontend: optionally set `REACT_APP_*` vars for API hosts and contract IDs.
-
-## Smart Contract
-
-The escrow contract handles:
-- Create bounties with ALGO payments
-- Accept bounties as freelancers
-- Approve completed work
-- Claim payments automatically
-- Handle refunds
-
-### Deploy Contract
-
+### 2. Start the Application
 ```bash
+cd frontend
+npm start
+```
+
+### 3. Connect Your Wallet
+- Install [Lute Wallet](https://chrome.google.com/webstore/detail/lute-wallet/)
+- Open `http://localhost:3000`
+- Click "Connect Wallet"
+
+### 4. Deploy Smart Contract (Optional)
+```bash
+# Compile the contract
 cd contracts
 python algoease_contract.py
-# Deploy using AlgoKit or goal CLI
+
+# Deploy the contract
+cd ..
+python deploy.py
 ```
 
-## Frontend Features
+## 📁 Project Structure
 
-- **Wallet Connection** - Automatic detection of Pera Wallet and AlgoSigner
-- **Bounty Management** - Create, browse, accept, approve, claim
-- **Real-time Updates** - Live contract state monitoring
-- **Responsive Design** - Works on mobile and desktop
+```
+AlgoEase/
+├── 📂 frontend/          # React application
+├── 📂 contracts/         # Smart contracts (PyTeal)
+├── 📂 backend/           # Node.js API
+├── 📂 docs/             # Documentation
+└── 📄 deploy.py         # Contract deployment script
+```
 
-## Troubleshooting
+## 🛠️ Tech Stack
 
-- **No wallets detected**: Install Pera Wallet or AlgoSigner
-- **Connection failed**: Check wallet permissions and network
-- **Contract not deployed**: Set `REACT_APP_CONTRACT_APP_ID` in `.env`
-- **Webpack errors**: Install polyfills: `npm i -D process buffer stream-browserify assert util os-browserify`
+- **Frontend:** React + Tailwind CSS
+- **Smart Contracts:** PyTeal on Algorand
+- **Wallet:** Lute Wallet
+- **Blockchain:** Algorand TestNet
 
-## Testing
+## 📋 How It Works
 
-1. **Deploy contract** and set `REACT_APP_CONTRACT_APP_ID` in `.env`
-2. **Connect wallet** (Pera Wallet or AlgoSigner)
-3. **Test bounty flow**: Create → Accept → Approve → Claim
+1. **Client creates a bounty** with payment amount and deadline
+2. **Freelancer accepts** the bounty and starts working
+3. **Verifier approves** the completed work
+4. **Payment is automatically released** to the freelancer
+5. **If work isn't approved** by deadline, funds are refunded
 
-## Contributing
+## 🔧 Configuration
+
+### Environment Variables
+Create `frontend/.env`:
+```env
+REACT_APP_CONTRACT_APP_ID=your_app_id_here
+REACT_APP_ALGOD_URL=https://testnet-api.algonode.cloud
+REACT_APP_INDEXER_URL=https://testnet-idx.algonode.cloud
+REACT_APP_CREATOR_MNEMONIC="your_mnemonic_here"
+```
+
+## 🎯 Usage
+
+### For Clients
+1. Connect your Lute wallet
+2. Create a new bounty with task details
+3. Set payment amount and deadline
+4. Wait for freelancer to accept
+5. Approve work when completed
+
+### For Freelancers
+1. Connect your Lute wallet
+2. Browse available bounties
+3. Accept a bounty you want to work on
+4. Complete the task
+5. Wait for approval to get paid
+
+### For Verifiers
+1. Connect your Lute wallet
+2. Review completed work
+3. Approve or reject the submission
+4. Payment is automatically processed
+
+## 🚨 Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Wallet not detected | Install Lute Wallet extension |
+| Connection failed | Check wallet permissions |
+| Contract errors | Make sure contract is deployed |
+| Transaction fails | Check wallet has enough ALGO |
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-### Commit style
+## 📄 License
 
-Use conventional commits, e.g.:
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-```text
-feat(contracts): add refund path for deadline expiry
-fix(frontend): correct WalletContext algosdk import
-docs(readme): add Git workflow and troubleshooting
-```
+## 🙏 Acknowledgments
 
-## Documentation
+- Built on [Algorand](https://algorand.org/) blockchain
+- Uses [Lute Wallet](https://lute-wallet.com/) for secure transactions
+- Powered by [PyTeal](https://pyteal.readthedocs.io/) smart contracts
 
-- `SMART_CONTRACT_INTEGRATION.md` - Complete integration guide
-- `docs/` - API and component documentation
+---
 
-## License
-
-MIT License - see LICENSE file for details
+**Need help?** Check out our [documentation](docs/) or open an issue! 🆘
