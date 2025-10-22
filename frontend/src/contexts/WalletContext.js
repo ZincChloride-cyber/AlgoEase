@@ -75,7 +75,8 @@ export const WalletProvider = ({ children }) => {
       }
       
       // Convert transaction to base64 format for Lute wallet
-      const txnBase64 = Buffer.from(algosdk.encodeUnsignedTransaction(txn)).toString('base64');
+      const txnBytes = algosdk.encodeUnsignedTransaction(txn);
+      const txnBase64 = btoa(String.fromCharCode(...txnBytes));
       
       // Sign transaction using Lute wallet
       const signedTxns = await luteWallet.signTxns([{ txn: txnBase64 }]);
@@ -89,7 +90,54 @@ export const WalletProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('Failed to sign transaction:', error);
-      throw error;
+      
+      // Provide user-friendly error messages
+      if (error.message && error.message.includes('User Rejected Request')) {
+        throw new Error('Transaction signing was cancelled by user.');
+      } else if (error.message && error.message.includes('SignTxnsError')) {
+        throw new Error('Failed to sign transaction. Please check your wallet connection.');
+      } else {
+        throw error;
+      }
+    }
+  };
+
+  const signTransactionGroup = async (txns) => {
+    try {
+      if (!luteWallet) {
+        throw new Error('No Lute wallet available for signing. Please connect Lute wallet first.');
+      }
+      
+      // Convert all transactions to base64 format for Lute wallet
+      const txnGroup = txns.map(txn => {
+        const txnBytes = algosdk.encodeUnsignedTransaction(txn);
+        const txnBase64 = btoa(String.fromCharCode(...txnBytes));
+        return { txn: txnBase64 };
+      });
+      
+      console.log('Signing transaction group with', txnGroup.length, 'transactions');
+      
+      // Sign transaction group using Lute wallet
+      const signedTxns = await luteWallet.signTxns(txnGroup);
+      
+      if (signedTxns && signedTxns.length > 0) {
+        // Return the signed transactions in their original format from Lute wallet
+        // They are already in the correct format for submission
+        return signedTxns;
+      } else {
+        throw new Error('Failed to sign transaction group with Lute wallet.');
+      }
+    } catch (error) {
+      console.error('Failed to sign transaction group:', error);
+      
+      // Provide user-friendly error messages
+      if (error.message && error.message.includes('User Rejected Request')) {
+        throw new Error('Transaction signing was cancelled by user.');
+      } else if (error.message && error.message.includes('SignTxnsError')) {
+        throw new Error('Failed to sign transaction. Please check your wallet connection.');
+      } else {
+        throw error;
+      }
     }
   };
 
@@ -140,12 +188,8 @@ export const WalletProvider = ({ children }) => {
         verifierAddress
       );
 
-      // Sign transactions
-      const signedTxns = [];
-      for (const txn of txns) {
-        const signedTxn = await signTransaction(txn);
-        signedTxns.push(signedTxn);
-      }
+      // Sign transaction group
+      const signedTxns = await signTransactionGroup(txns);
 
       // Submit transaction group
       const txId = await contractUtils.submitTransactionGroup(signedTxns);
@@ -159,7 +203,15 @@ export const WalletProvider = ({ children }) => {
       return txId;
     } catch (error) {
       console.error('Failed to create bounty:', error);
-      throw error;
+      
+      // Provide user-friendly error messages
+      if (error.message && error.message.includes('User Rejected Request')) {
+        throw new Error('Transaction was cancelled. Please try again and approve the transaction in your wallet.');
+      } else if (error.message && error.message.includes('SignTxnsError')) {
+        throw new Error('Failed to sign transaction. Please check your wallet connection and try again.');
+      } else {
+        throw error;
+      }
     }
   };
 
@@ -255,6 +307,7 @@ export const WalletProvider = ({ children }) => {
     connectWallet,
     disconnectWallet,
     signTransaction,
+    signTransactionGroup,
     getAccountInfo,
     algodClient,
     // Smart contract functions

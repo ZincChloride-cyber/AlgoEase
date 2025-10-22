@@ -1,12 +1,35 @@
 from algosdk import account, mnemonic, transaction
 from algosdk.v2client import algod
 import base64
+import os
 from algosdk.transaction import wait_for_confirmation
+
+# Load environment variables from .env file
+def load_env_file(filepath):
+    """Simple .env file loader"""
+    env_vars = {}
+    if os.path.exists(filepath):
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    # Remove quotes if present
+                    value = value.strip('"\'')
+                    env_vars[key] = value
+                    os.environ[key] = value
+    return env_vars
+
+load_env_file('frontend/.env')
 
 # ---------------- CONFIG ----------------
 ALGOD_ADDRESS = "https://testnet-api.algonode.cloud"
 ALGOD_TOKEN = ""  # Algonode doesn't require a token
-CREATOR_MNEMONIC = "switch race mimic three mandate weather record vacuum glue alone such advice guide moral bronze orphan labor century advice type keep original evolve abandon link"
+CREATOR_MNEMONIC = os.getenv('REACT_APP_CREATOR_MNEMONIC')
+
+# Validate that mnemonic is loaded
+if not CREATOR_MNEMONIC:
+    raise ValueError("REACT_APP_CREATOR_MNEMONIC not found in .env file. Please add it to your .env file.")
 
 
 # ----------------------------------------
@@ -56,8 +79,8 @@ def main():
     # Wait for confirmation
     confirmed_txn = wait_for_confirmation(algod_client, txid, 10)
     app_id = confirmed_txn["application-index"]
-    print("✅ Deployed successfully!")
-    print("🆔 App ID:", app_id)
+    print("Deployed successfully!")
+    print("App ID:", app_id)
 
 if __name__ == "__main__":
     main()
