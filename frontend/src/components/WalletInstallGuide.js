@@ -5,26 +5,15 @@ const WalletInstallGuide = ({ onClose }) => {
 
   const wallets = [
     {
-      name: 'Pera Wallet',
-      description: 'Official Algorand wallet for mobile and web',
-      icon: '🔗',
+      name: 'Lute Wallet',
+      description: 'Secure and user-friendly Algorand wallet',
+      icon: '🎵',
       links: {
-        mobile: 'https://perawallet.app/',
-        web: 'https://perawallet.app/',
-        chrome: 'https://chrome.google.com/webstore/detail/pera-wallet/'
+        chrome: 'https://chrome.google.com/webstore/detail/lute-wallet/',
+        firefox: 'https://addons.mozilla.org/en-US/firefox/addon/lute-wallet/',
+        github: 'https://github.com/lute-wallet/lute'
       },
-      features: ['Mobile & Web', 'Official Algorand', 'NFT Support', 'DeFi Integration']
-    },
-    {
-      name: 'AlgoSigner',
-      description: 'Browser extension for Algorand transactions',
-      icon: '🔐',
-      links: {
-        chrome: 'https://chrome.google.com/webstore/detail/algosigner/',
-        firefox: 'https://addons.mozilla.org/en-US/firefox/addon/algosigner/',
-        github: 'https://github.com/PureStake/algosigner'
-      },
-      features: ['Browser Extension', 'Developer Friendly', 'Transaction Signing', 'Account Management']
+      features: ['Browser Extension', 'Secure Storage', 'Transaction Signing', 'Easy to Use']
     }
   ];
 

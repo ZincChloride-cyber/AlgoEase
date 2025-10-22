@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
 import algosdk from 'algosdk/dist/browser/algosdk.min.js';
+import LuteConnect from 'lute-connect';
 import contractUtils from '../utils/contractUtils';
 
 const WalletContext = createContext();
@@ -26,34 +27,27 @@ export const WalletProvider = ({ children }) => {
     ''
   );
 
+  // Initialize Lute wallet connection
+  const luteWallet = new LuteConnect('AlgoEase');
+
   const connectWallet = async () => {
     try {
       setIsConnecting(true);
       
-      // Try Pera Wallet first
-      if (window.algorand && window.algorand.pera) {
-        const accounts = await window.algorand.pera.connect();
-        if (accounts.length > 0) {
-          setAccount(accounts[0]);
-          setIsConnected(true);
-          console.log('Pera Wallet connected:', accounts[0]);
-          return;
-        }
-      }
+      // Connect to Lute Wallet using lute-connect
+      const genesis = await algodClient.genesis().do();
+      const genesisID = `${genesis.network}-${genesis.id}`;
+      const addresses = await luteWallet.connect(genesisID);
       
-      // Try AlgoSigner as fallback
-      if (window.AlgoSigner) {
-        const accounts = await window.AlgoSigner.connect();
-        if (accounts.length > 0) {
-          setAccount(accounts[0]);
-          setIsConnected(true);
-          console.log('AlgoSigner connected:', accounts[0]);
-          return;
-        }
+      if (addresses && addresses.length > 0) {
+        setAccount(addresses[0]);
+        setIsConnected(true);
+        console.log('Lute Wallet connected:', addresses[0]);
+        return;
       }
       
       // If no wallet is available, show error
-      throw new Error('No Algorand wallet found. Please install Pera Wallet or AlgoSigner.');
+      throw new Error('No Lute wallet found. Please install Lute Wallet.');
       
     } catch (error) {
       console.error('Failed to connect wallet:', error);
@@ -76,16 +70,22 @@ export const WalletProvider = ({ children }) => {
 
   const signTransaction = async (txn) => {
     try {
-      if (window.algorand && window.algorand.pera) {
-        // Pera Wallet signing
-        const signedTxn = await window.algorand.pera.signTransaction(txn);
-        return signedTxn;
-      } else if (window.AlgoSigner) {
-        // AlgoSigner signing
-        const signedTxn = await window.AlgoSigner.signTxn(txn);
-        return signedTxn;
+      if (!luteWallet) {
+        throw new Error('No Lute wallet available for signing. Please connect Lute wallet first.');
+      }
+      
+      // Convert transaction to base64 format for Lute wallet
+      const txnBase64 = Buffer.from(algosdk.encodeUnsignedTransaction(txn)).toString('base64');
+      
+      // Sign transaction using Lute wallet
+      const signedTxns = await luteWallet.signTxns([{ txn: txnBase64 }]);
+      
+      if (signedTxns && signedTxns.length > 0) {
+        // Decode the signed transaction
+        const decodedTxn = algosdk.decodeSignedTransaction(signedTxns[0]);
+        return decodedTxn;
       } else {
-        throw new Error('No wallet available for signing. Please connect a wallet first.');
+        throw new Error('Failed to sign transaction with Lute wallet.');
       }
     } catch (error) {
       console.error('Failed to sign transaction:', error);
