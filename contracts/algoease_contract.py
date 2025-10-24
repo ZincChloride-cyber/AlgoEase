@@ -71,6 +71,7 @@ def handle_noop():
         [Txn.application_args[0] == Bytes("approve_bounty"), approve_bounty()],
         [Txn.application_args[0] == Bytes("claim"), claim_bounty()],
         [Txn.application_args[0] == Bytes("refund"), refund_bounty()],
+        [Txn.application_args[0] == Bytes("auto_refund"), auto_refund()],
         [Txn.application_args[0] == Bytes("get_bounty"), get_bounty_info()]
     )
 
@@ -94,6 +95,12 @@ def create_bounty():
         Assert(Gtxn[0].sender() == Txn.sender()),  # payment must be from caller
         Assert(Gtxn[0].receiver() == Global.current_application_address()),
         Assert(Gtxn[0].amount() == Btoi(Txn.application_args[1])),
+
+        # Validate amount is greater than 0
+        Assert(Btoi(Txn.application_args[1]) > Int(0)),
+
+        # Validate deadline is in the future
+        Assert(Btoi(Txn.application_args[2]) > Global.latest_timestamp()),
 
         # Now proceed to create bounty (either first bounty or after previous closed)
         If(App.globalGet(BOUNTY_COUNT) == Int(0))
@@ -194,7 +201,7 @@ def claim_bounty():
     ])
 
 def refund_bounty():
-    """Refund bounty to client (automatic or manual refund)"""
+    """Refund bounty to client (manual refund by client or verifier)"""
     return Seq([
         # Validate arguments
         Assert(Txn.application_args.length() == Int(1)),
@@ -204,14 +211,41 @@ def refund_bounty():
         Assert(App.globalGet(STATUS) != STATUS_REFUNDED),
         
         # Allow refund if:
-        # 1. Deadline has passed, OR
-        # 2. Client is calling (manual refund), OR
-        # 3. Verifier is calling (rejection)
+        # 1. Client is calling (manual refund), OR
+        # 2. Verifier is calling (rejection)
         Assert(Or(
-            Global.latest_timestamp() >= App.globalGet(DEADLINE),  # Deadline passed
             Txn.sender() == App.globalGet(CLIENT_ADDR),            # Client refund
             Txn.sender() == App.globalGet(VERIFIER_ADDR)           # Verifier rejection
         )),
+        
+        # Send refund to client
+        InnerTxnBuilder.Begin(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.Payment,
+            TxnField.receiver: App.globalGet(CLIENT_ADDR),
+            TxnField.amount: App.globalGet(AMOUNT),
+            TxnField.sender: Global.current_application_address(),
+        }),
+        InnerTxnBuilder.Submit(),
+        
+        # Update status to refunded
+        App.globalPut(STATUS, STATUS_REFUNDED),
+        
+        Return(Int(1))
+    ])
+
+def auto_refund():
+    """Automatic refund when deadline has passed (anyone can call)"""
+    return Seq([
+        # Validate arguments
+        Assert(Txn.application_args.length() == Int(1)),
+        
+        # Check bounty is not already claimed or refunded
+        Assert(App.globalGet(STATUS) != STATUS_CLAIMED),
+        Assert(App.globalGet(STATUS) != STATUS_REFUNDED),
+        
+        # Check deadline has passed
+        Assert(Global.latest_timestamp() >= App.globalGet(DEADLINE)),
         
         # Send refund to client
         InnerTxnBuilder.Begin(),
