@@ -2,23 +2,23 @@
 txn ApplicationID
 int 0
 ==
-bnz main_l28
+bnz main_l30
 txn OnCompletion
 int DeleteApplication
 ==
-bnz main_l27
+bnz main_l29
 txn OnCompletion
 int UpdateApplication
 ==
-bnz main_l26
+bnz main_l28
 txn OnCompletion
 int CloseOut
 ==
-bnz main_l25
+bnz main_l27
 txn OnCompletion
 int OptIn
 ==
-bnz main_l24
+bnz main_l26
 txn OnCompletion
 int NoOp
 ==
@@ -28,32 +28,36 @@ main_l7:
 txna ApplicationArgs 0
 byte "create_bounty"
 ==
-bnz main_l19
+bnz main_l21
 txna ApplicationArgs 0
 byte "accept_bounty"
 ==
-bnz main_l18
+bnz main_l20
 txna ApplicationArgs 0
 byte "approve_bounty"
 ==
-bnz main_l17
+bnz main_l19
 txna ApplicationArgs 0
 byte "claim"
 ==
-bnz main_l16
+bnz main_l18
 txna ApplicationArgs 0
 byte "refund"
 ==
-bnz main_l15
+bnz main_l17
+txna ApplicationArgs 0
+byte "auto_refund"
+==
+bnz main_l16
 txna ApplicationArgs 0
 byte "get_bounty"
 ==
-bnz main_l14
+bnz main_l15
 err
-main_l14:
+main_l15:
 int 1
 return
-main_l15:
+main_l16:
 txn NumAppArgs
 int 1
 ==
@@ -72,11 +76,43 @@ global LatestTimestamp
 byte "deadline"
 app_global_get
 >=
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+byte "client_addr"
+app_global_get
+itxn_field Receiver
+byte "amount"
+app_global_get
+itxn_field Amount
+global CurrentApplicationAddress
+itxn_field Sender
+itxn_submit
+byte "status"
+int 4
+app_global_put
+int 1
+return
+main_l17:
+txn NumAppArgs
+int 1
+==
+assert
+byte "status"
+app_global_get
+int 3
+!=
+assert
+byte "status"
+app_global_get
+int 4
+!=
+assert
 txn Sender
 byte "client_addr"
 app_global_get
 ==
-||
 txn Sender
 byte "verifier_addr"
 app_global_get
@@ -100,7 +136,7 @@ int 4
 app_global_put
 int 1
 return
-main_l16:
+main_l18:
 txn NumAppArgs
 int 1
 ==
@@ -132,7 +168,7 @@ int 3
 app_global_put
 int 1
 return
-main_l17:
+main_l19:
 txn NumAppArgs
 int 1
 ==
@@ -152,7 +188,7 @@ int 2
 app_global_put
 int 1
 return
-main_l18:
+main_l20:
 txn NumAppArgs
 int 1
 ==
@@ -175,7 +211,7 @@ int 1
 app_global_put
 int 1
 return
-main_l19:
+main_l21:
 txn NumAppArgs
 int 4
 ==
@@ -209,11 +245,21 @@ txna ApplicationArgs 1
 btoi
 ==
 assert
+txna ApplicationArgs 1
+btoi
+int 0
+>
+assert
+txna ApplicationArgs 2
+btoi
+global LatestTimestamp
+>
+assert
 byte "bounty_count"
 app_global_get
 int 0
 ==
-bnz main_l23
+bnz main_l25
 byte "status"
 app_global_get
 int 3
@@ -223,10 +269,10 @@ app_global_get
 int 4
 ==
 ||
-bnz main_l22
+bnz main_l24
 int 0
 return
-main_l22:
+main_l24:
 byte "client_addr"
 txn Sender
 app_global_put
@@ -255,7 +301,7 @@ int 1
 app_global_put
 int 1
 return
-main_l23:
+main_l25:
 byte "client_addr"
 txn Sender
 app_global_put
@@ -281,16 +327,16 @@ int 1
 app_global_put
 int 1
 return
-main_l24:
-int 1
-return
-main_l25:
-int 1
-return
 main_l26:
-int 0
+int 1
 return
 main_l27:
+int 1
+return
+main_l28:
+int 0
+return
+main_l29:
 byte "bounty_count"
 app_global_get
 int 0
@@ -298,7 +344,7 @@ int 0
 assert
 int 1
 return
-main_l28:
+main_l30:
 byte "bounty_count"
 int 0
 app_global_put

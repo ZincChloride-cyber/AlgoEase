@@ -45,6 +45,7 @@ export const CONTRACT_CONFIG = {
     APPROVE_BOUNTY: 'approve_bounty',
     CLAIM_BOUNTY: 'claim',
     REFUND_BOUNTY: 'refund',
+    AUTO_REFUND: 'auto_refund',
     GET_BOUNTY: 'get_bounty'
   }
 };

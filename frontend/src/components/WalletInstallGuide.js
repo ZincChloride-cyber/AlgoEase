@@ -5,23 +5,38 @@ const WalletInstallGuide = ({ onClose }) => {
 
   const wallets = [
     {
+      name: 'Pera Wallet',
+      description: 'Official Algorand mobile wallet with full DeFi support',
+      icon: '🟢',
+      links: {
+        ios: 'https://apps.apple.com/us/app/pera-algo-wallet/id1459898525',
+        android: 'https://play.google.com/store/apps/details?id=com.algorand.android',
+        website: 'https://perawallet.app/'
+      },
+      features: ['Mobile App', 'WalletConnect', 'DeFi Support', 'NFT Gallery', 'Most Popular']
+    },
+    {
       name: 'Lute Wallet',
-      description: 'Secure and user-friendly Algorand wallet',
+      description: 'Secure and user-friendly Algorand browser wallet',
       icon: '🎵',
       links: {
         chrome: 'https://chrome.google.com/webstore/detail/lute-wallet/',
         firefox: 'https://addons.mozilla.org/en-US/firefox/addon/lute-wallet/',
-        github: 'https://github.com/lute-wallet/lute'
+        website: 'https://lute.app/'
       },
       features: ['Browser Extension', 'Secure Storage', 'Transaction Signing', 'Easy to Use']
     }
   ];
 
-  const handleInstall = (wallet) => {
-    if (wallet.links.chrome) {
+  const handleInstall = (wallet, platform = 'default') => {
+    if (platform === 'ios' && wallet.links.ios) {
+      window.open(wallet.links.ios, '_blank');
+    } else if (platform === 'android' && wallet.links.android) {
+      window.open(wallet.links.android, '_blank');
+    } else if (wallet.links.chrome) {
       window.open(wallet.links.chrome, '_blank');
-    } else if (wallet.links.mobile) {
-      window.open(wallet.links.mobile, '_blank');
+    } else if (wallet.links.website) {
+      window.open(wallet.links.website, '_blank');
     }
   };
 
@@ -83,21 +98,37 @@ const WalletInstallGuide = ({ onClose }) => {
                     </div>
                   </div>
                 </div>
-                <div className="flex space-x-2">
+                <div className="flex flex-col space-y-2">
                   {wallet.links.chrome && (
                     <button
                       onClick={() => handleInstall(wallet)}
-                      className="btn-primary text-sm"
+                      className="btn-primary text-sm whitespace-nowrap"
                     >
-                      Install
+                      Install Extension
                     </button>
                   )}
-                  {wallet.links.mobile && (
+                  {wallet.links.ios && (
                     <button
-                      onClick={() => window.open(wallet.links.mobile, '_blank')}
-                      className="btn-outline text-sm"
+                      onClick={() => handleInstall(wallet, 'ios')}
+                      className="btn-outline text-sm whitespace-nowrap"
                     >
-                      Mobile
+                      iOS App
+                    </button>
+                  )}
+                  {wallet.links.android && (
+                    <button
+                      onClick={() => handleInstall(wallet, 'android')}
+                      className="btn-outline text-sm whitespace-nowrap"
+                    >
+                      Android App
+                    </button>
+                  )}
+                  {wallet.links.website && !wallet.links.chrome && !wallet.links.ios && (
+                    <button
+                      onClick={() => handleInstall(wallet)}
+                      className="btn-primary text-sm whitespace-nowrap"
+                    >
+                      Visit Website
                     </button>
                   )}
                 </div>

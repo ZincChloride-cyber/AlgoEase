@@ -25,6 +25,7 @@ export const CONTRACT_METHODS = {
   APPROVE_BOUNTY: 'approve_bounty',
   CLAIM_BOUNTY: 'claim',
   REFUND_BOUNTY: 'refund',
+  AUTO_REFUND: 'auto_refund',
   GET_BOUNTY: 'get_bounty'
 };
 
@@ -216,7 +217,7 @@ class ContractUtils {
     }
   }
 
-  // Refund bounty
+  // Refund bounty (manual refund by client or verifier)
   async refundBounty(sender) {
     try {
       const appCallTxn = await this.createAppCallTransaction(
@@ -230,6 +231,24 @@ class ContractUtils {
       return appCallTxn;
     } catch (error) {
       console.error('Failed to create refund bounty transaction:', error);
+      throw error;
+    }
+  }
+
+  // Auto refund bounty (when deadline has passed)
+  async autoRefundBounty(sender) {
+    try {
+      const appCallTxn = await this.createAppCallTransaction(
+        sender,
+        CONTRACT_METHODS.AUTO_REFUND,
+        [],
+        [],
+        'AlgoEase: Auto Refund Bounty'
+      );
+
+      return appCallTxn;
+    } catch (error) {
+      console.error('Failed to create auto refund bounty transaction:', error);
       throw error;
     }
   }
@@ -327,8 +346,12 @@ class ContractUtils {
         return (bountyInfo.status === BOUNTY_STATUS.OPEN || 
                 bountyInfo.status === BOUNTY_STATUS.ACCEPTED) &&
                (userAddress === bountyInfo.clientAddress || 
-                userAddress === bountyInfo.verifierAddress ||
-                Date.now() / 1000 > bountyInfo.deadline.getTime() / 1000);
+                userAddress === bountyInfo.verifierAddress);
+      
+      case 'auto_refund':
+        return (bountyInfo.status === BOUNTY_STATUS.OPEN || 
+                bountyInfo.status === BOUNTY_STATUS.ACCEPTED) &&
+               Date.now() / 1000 > bountyInfo.deadline.getTime() / 1000;
       
       default:
         return false;

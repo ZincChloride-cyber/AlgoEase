@@ -84,13 +84,37 @@ router.post('/', authenticate, validateBounty, async (req, res) => {
   try {
     const bountyData = {
       ...req.body,
-      clientAddress: req.user.address
+      clientAddress: req.user.address,
+      // Generate a unique contract ID for this bounty
+      contractId: Date.now() + Math.floor(Math.random() * 1000)
     };
 
     const bounty = new Bounty(bountyData);
     await bounty.save();
 
-    res.status(201).json(bounty);
+    // Return bounty with smart contract interaction instructions
+    res.status(201).json({
+      ...bounty.toObject(),
+      smartContract: {
+        action: 'create_bounty',
+        required: {
+          payment: {
+            amount: bounty.amount,
+            to: 'contract_address', // Will be replaced by frontend
+            note: 'AlgoEase: Bounty Payment'
+          },
+          appCall: {
+            method: 'create_bounty',
+            args: [
+              bounty.amount * 1000000, // Convert to microALGO
+              Math.floor(bounty.deadline.getTime() / 1000), // Convert to timestamp
+              bounty.description
+            ],
+            accounts: [bounty.verifierAddress]
+          }
+        }
+      }
+    });
   } catch (error) {
     console.error('Error creating bounty:', error);
     res.status(500).json({ error: 'Failed to create bounty' });
@@ -188,6 +212,200 @@ router.get('/user/:address', async (req, res) => {
   } catch (error) {
     console.error('Error fetching user bounties:', error);
     res.status(500).json({ error: 'Failed to fetch user bounties' });
+  }
+});
+
+// Smart contract interaction endpoints
+router.post('/:id/accept', authenticate, async (req, res) => {
+  try {
+    const bounty = await Bounty.findOne({ contractId: req.params.id });
+    
+    if (!bounty) {
+      return res.status(404).json({ error: 'Bounty not found' });
+    }
+
+    if (bounty.status !== 'open') {
+      return res.status(400).json({ error: 'Bounty is not open for acceptance' });
+    }
+
+    // Update bounty with freelancer
+    bounty.freelancerAddress = req.user.address;
+    bounty.status = 'accepted';
+    await bounty.save();
+
+    res.json({
+      message: 'Bounty accepted successfully',
+      smartContract: {
+        action: 'accept_bounty',
+        required: {
+          appCall: {
+            method: 'accept_bounty',
+            args: [],
+            accounts: []
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error accepting bounty:', error);
+    res.status(500).json({ error: 'Failed to accept bounty' });
+  }
+});
+
+router.post('/:id/approve', authenticate, async (req, res) => {
+  try {
+    const bounty = await Bounty.findOne({ contractId: req.params.id });
+    
+    if (!bounty) {
+      return res.status(404).json({ error: 'Bounty not found' });
+    }
+
+    if (bounty.verifierAddress !== req.user.address) {
+      return res.status(403).json({ error: 'Only the verifier can approve this bounty' });
+    }
+
+    if (bounty.status !== 'accepted') {
+      return res.status(400).json({ error: 'Bounty must be accepted before approval' });
+    }
+
+    // Update bounty status
+    bounty.status = 'approved';
+    await bounty.save();
+
+    res.json({
+      message: 'Bounty approved successfully',
+      smartContract: {
+        action: 'approve_bounty',
+        required: {
+          appCall: {
+            method: 'approve_bounty',
+            args: [],
+            accounts: []
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error approving bounty:', error);
+    res.status(500).json({ error: 'Failed to approve bounty' });
+  }
+});
+
+router.post('/:id/claim', authenticate, async (req, res) => {
+  try {
+    const bounty = await Bounty.findOne({ contractId: req.params.id });
+    
+    if (!bounty) {
+      return res.status(404).json({ error: 'Bounty not found' });
+    }
+
+    if (bounty.freelancerAddress !== req.user.address) {
+      return res.status(403).json({ error: 'Only the freelancer can claim this bounty' });
+    }
+
+    if (bounty.status !== 'approved') {
+      return res.status(400).json({ error: 'Bounty must be approved before claiming' });
+    }
+
+    // Update bounty status
+    bounty.status = 'claimed';
+    await bounty.save();
+
+    res.json({
+      message: 'Bounty claimed successfully',
+      smartContract: {
+        action: 'claim',
+        required: {
+          appCall: {
+            method: 'claim',
+            args: [],
+            accounts: []
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error claiming bounty:', error);
+    res.status(500).json({ error: 'Failed to claim bounty' });
+  }
+});
+
+router.post('/:id/refund', authenticate, async (req, res) => {
+  try {
+    const bounty = await Bounty.findOne({ contractId: req.params.id });
+    
+    if (!bounty) {
+      return res.status(404).json({ error: 'Bounty not found' });
+    }
+
+    if (bounty.clientAddress !== req.user.address && bounty.verifierAddress !== req.user.address) {
+      return res.status(403).json({ error: 'Only the client or verifier can refund this bounty' });
+    }
+
+    if (bounty.status === 'claimed' || bounty.status === 'refunded') {
+      return res.status(400).json({ error: 'Bounty cannot be refunded' });
+    }
+
+    // Update bounty status
+    bounty.status = 'refunded';
+    await bounty.save();
+
+    res.json({
+      message: 'Bounty refunded successfully',
+      smartContract: {
+        action: 'refund',
+        required: {
+          appCall: {
+            method: 'refund',
+            args: [],
+            accounts: []
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error refunding bounty:', error);
+    res.status(500).json({ error: 'Failed to refund bounty' });
+  }
+});
+
+router.post('/:id/auto-refund', async (req, res) => {
+  try {
+    const bounty = await Bounty.findOne({ contractId: req.params.id });
+    
+    if (!bounty) {
+      return res.status(404).json({ error: 'Bounty not found' });
+    }
+
+    // Check if deadline has passed
+    if (new Date() < bounty.deadline) {
+      return res.status(400).json({ error: 'Deadline has not passed yet' });
+    }
+
+    if (bounty.status === 'claimed' || bounty.status === 'refunded') {
+      return res.status(400).json({ error: 'Bounty cannot be refunded' });
+    }
+
+    // Update bounty status
+    bounty.status = 'refunded';
+    await bounty.save();
+
+    res.json({
+      message: 'Bounty auto-refunded successfully',
+      smartContract: {
+        action: 'auto_refund',
+        required: {
+          appCall: {
+            method: 'auto_refund',
+            args: [],
+            accounts: []
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error auto-refunding bounty:', error);
+    res.status(500).json({ error: 'Failed to auto-refund bounty' });
   }
 });
 
