@@ -1,4 +1,4 @@
-# AlgoEase 🚀
+# AlgoEase 
 **Decentralized Freelance Platform on Algorand**
 
 A trustless escrow system that automatically releases payments using smart contracts. No middlemen, just secure payments between clients and freelancers on the Algorand blockchain.
