@@ -88,45 +88,10 @@ cd ..
 node scripts/deploy-contract.js
 ```
 
-#### Option B: Use Deployment Scripts
-```bash
-# Interactive bounty CLI
-python bounty-wizard.py
+#### Option B: Run the smart contract
 
-# Or use the deployment script
-python deploy-to-testnet.py
-```
+python working-bounty-tool.py
 
-### 5. Configure Environment Variables
-
-#### Frontend (`frontend/.env.local`)
-```env
-REACT_APP_CONTRACT_APP_ID=<your_deployed_app_id>
-REACT_APP_CONTRACT_ADDRESS=<your_contract_address>
-REACT_APP_ALGOD_URL=https://testnet-api.algonode.cloud
-REACT_APP_INDEXER_URL=https://testnet-idx.algonode.cloud
-REACT_APP_NETWORK=testnet
-```
-
-#### Backend (`backend/.env`)
-```env
-PORT=5000
-MONGODB_URI=mongodb://localhost:27017/algoease
-JWT_SECRET=your_random_secret_key
-NODE_ENV=development
-```
-
-### 6. Start the Application
-```bash
-# Terminal 1: Start Backend
-cd backend
-npm start
-# Backend runs on http://localhost:5000
-
-# Terminal 2: Start Frontend
-cd frontend
-npm start
-# Frontend runs on http://localhost:3000
 ```
 
 ### 7. Connect Your Wallet
