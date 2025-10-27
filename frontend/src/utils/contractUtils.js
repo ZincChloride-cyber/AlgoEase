@@ -4,7 +4,7 @@ import algosdk from 'algosdk/dist/browser/algosdk.min.js';
 // Contract configuration
 const CONTRACT_CONFIG = {
   // These will be set after contract deployment
-  appId: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 748211428,
+  appId: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 748433709,
   // TestNet configuration
   algodClient: new algosdk.Algodv2(
     '',
@@ -84,7 +84,12 @@ class ContractUtils {
       throw new Error('Contract app ID not set. Please deploy the contract first.');
     }
     
-    console.log('Creating app call transaction with app ID:', this.appId, 'type:', typeof this.appId);
+    console.log('Creating app call transaction:');
+    console.log('  - App ID:', this.appId);
+    console.log('  - Method:', method);
+    console.log('  - Sender:', sender);
+    console.log('  - Accounts array:', accounts);
+    console.log('  - Accounts length:', accounts.length);
 
     const suggestedParams = await this.getSuggestedParams();
     
@@ -130,8 +135,21 @@ class ContractUtils {
   // Create bounty on smart contract
   async createBounty(sender, amount, deadline, taskDescription, verifierAddress) {
     try {
+      // Validate and ensure verifierAddress is set
+      if (!verifierAddress || verifierAddress.trim() === '') {
+        verifierAddress = sender; // Use sender as verifier if not specified
+      }
+      
+      console.log('Creating bounty with verifier:', verifierAddress);
+      
       // Convert deadline to timestamp
       const deadlineTimestamp = Math.floor(new Date(deadline).getTime() / 1000);
+      
+      // Validate deadline is in the future
+      const now = Math.floor(Date.now() / 1000);
+      if (deadlineTimestamp <= now) {
+        throw new Error('Deadline must be in the future');
+      }
       
       // Convert amount to microALGO
       const amountMicroAlgo = Math.round(amount * 1000000);
@@ -145,11 +163,12 @@ class ContractUtils {
       );
 
       // Create the application call transaction (must be second)
+      // IMPORTANT: accounts array must not be empty - pass verifierAddress
       const appCallTxn = await this.createAppCallTransaction(
         sender,
         CONTRACT_METHODS.CREATE_BOUNTY,
         [amountMicroAlgo, deadlineTimestamp, taskDescription],
-        [verifierAddress],
+        [verifierAddress],  // This makes Txn.accounts.length() = 2 (sender + verifier)
         'AlgoEase: Create Bounty'
       );
 

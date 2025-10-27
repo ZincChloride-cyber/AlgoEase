@@ -84,7 +84,7 @@ def create_bounty():
     # and accounts: [verifier_addr]
     return Seq([
         Assert(Txn.application_args.length() == Int(4)),
-        Assert(Txn.accounts.length() >= Int(1)),
+        Assert(Txn.accounts.length() >= Int(1)),  # Need at least the verifier
 
         # The app-call must be the second txn in a group (index 1)
         Assert(Global.group_size() == Int(2)),
@@ -110,7 +110,7 @@ def create_bounty():
                 App.globalPut(AMOUNT, Btoi(Txn.application_args[1])),
                 App.globalPut(DEADLINE, Btoi(Txn.application_args[2])),
                 App.globalPut(TASK_DESCRIPTION, Txn.application_args[3]),
-                App.globalPut(VERIFIER_ADDR, Txn.accounts[1]),
+                App.globalPut(VERIFIER_ADDR, Txn.accounts[0]),  # First account is verifier
                 App.globalPut(STATUS, STATUS_OPEN),
                 App.globalPut(BOUNTY_COUNT, Int(1)),
                 Return(Int(1))
@@ -125,7 +125,7 @@ def create_bounty():
                     App.globalPut(AMOUNT, Btoi(Txn.application_args[1])),
                     App.globalPut(DEADLINE, Btoi(Txn.application_args[2])),
                     App.globalPut(TASK_DESCRIPTION, Txn.application_args[3]),
-                    App.globalPut(VERIFIER_ADDR, Txn.accounts[1]),
+                    App.globalPut(VERIFIER_ADDR, Txn.accounts[0]),  # First account is verifier
                     App.globalPut(STATUS, STATUS_OPEN),
                     App.globalPut(BOUNTY_COUNT, App.globalGet(BOUNTY_COUNT) + Int(1)),
                     Return(Int(1))
