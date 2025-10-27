@@ -73,25 +73,11 @@ docker ps
 
 #### Option A: Deploy to TestNet
 ```bash
-cd contracts
-python algoease_contract.py
 
+python working-bounty-tool.py
 # Set your mnemonic (TestNet account with ALGO)
 # Windows (PowerShell):
 $env:CREATOR_MNEMONIC = "your 25 word mnemonic here"
-
-# Linux/Mac:
-export CREATOR_MNEMONIC="your 25 word mnemonic here"
-
-# Deploy
-cd ..
-node scripts/deploy-contract.js
-```
-
-#### Option B: Run the smart contract
-
-python working-bounty-tool.py
-
 ```
 
 ### 7. Connect Your Wallet
