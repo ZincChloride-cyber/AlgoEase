@@ -162,7 +162,7 @@ The smart contract manages the escrow and enforces payment rules. It stores:
 
 ## Deployment
 
-**Deploy smart contract to TestNet:**
+**python working-bounty-tool.py:**
 ```bash
 python deploy-to-testnet.py
 ```
