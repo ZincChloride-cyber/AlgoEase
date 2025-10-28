@@ -12,9 +12,9 @@ BOUNTY_COUNT = Bytes("bounty_count")
 CLIENT_ADDR = Bytes("client_addr")
 FREELANCER_ADDR = Bytes("freelancer_addr")
 AMOUNT = Bytes("amount")
-DEADLINE = Bytes("deadline")
+DEADLINE = Bytes("deadline") 
 STATUS = Bytes("status")
-TASK_DESCRIPTION = Bytes("task_desc")
+TASK_DESCRIPTION = Bytes("task_desc") 
 VERIFIER_ADDR = Bytes("verifier_addr")
 
 # Status constants
