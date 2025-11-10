@@ -2,23 +2,23 @@
 txn ApplicationID
 int 0
 ==
-bnz main_l30
+bnz main_l29
 txn OnCompletion
 int DeleteApplication
 ==
-bnz main_l29
+bnz main_l28
 txn OnCompletion
 int UpdateApplication
 ==
-bnz main_l28
+bnz main_l27
 txn OnCompletion
 int CloseOut
 ==
-bnz main_l27
+bnz main_l26
 txn OnCompletion
 int OptIn
 ==
-bnz main_l26
+bnz main_l25
 txn OnCompletion
 int NoOp
 ==
@@ -77,20 +77,37 @@ byte "deadline"
 app_global_get
 >=
 assert
+byte "amount"
+app_global_get
+store 5
+load 5
+int 0
+>
+assert
 itxn_begin
 int pay
 itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
 byte "client_addr"
 app_global_get
 itxn_field Receiver
-byte "amount"
-app_global_get
+load 5
 itxn_field Amount
-global CurrentApplicationAddress
-itxn_field Sender
+int 0
+itxn_field Fee
 itxn_submit
 byte "status"
 int 4
+app_global_put
+byte "amount"
+int 0
+app_global_put
+byte "deadline"
+int 0
+app_global_put
+byte "task_desc"
+byte ""
 app_global_put
 int 1
 return
@@ -119,20 +136,37 @@ app_global_get
 ==
 ||
 assert
+byte "amount"
+app_global_get
+store 4
+load 4
+int 0
+>
+assert
 itxn_begin
 int pay
 itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
 byte "client_addr"
 app_global_get
 itxn_field Receiver
-byte "amount"
-app_global_get
+load 4
 itxn_field Amount
-global CurrentApplicationAddress
-itxn_field Sender
+int 0
+itxn_field Fee
 itxn_submit
 byte "status"
 int 4
+app_global_put
+byte "amount"
+int 0
+app_global_put
+byte "deadline"
+int 0
+app_global_put
+byte "task_desc"
+byte ""
 app_global_put
 int 1
 return
@@ -151,20 +185,36 @@ byte "freelancer_addr"
 app_global_get
 ==
 assert
+byte "amount"
+app_global_get
+store 3
+load 3
+int 0
+>
+assert
 itxn_begin
 int pay
 itxn_field TypeEnum
-byte "freelancer_addr"
-app_global_get
-itxn_field Receiver
-byte "amount"
-app_global_get
-itxn_field Amount
 global CurrentApplicationAddress
 itxn_field Sender
+txn Sender
+itxn_field Receiver
+load 3
+itxn_field Amount
+int 0
+itxn_field Fee
 itxn_submit
 byte "status"
 int 3
+app_global_put
+byte "amount"
+int 0
+app_global_put
+byte "deadline"
+int 0
+app_global_put
+byte "task_desc"
+byte ""
 app_global_put
 int 1
 return
@@ -216,10 +266,6 @@ txn NumAppArgs
 int 4
 ==
 assert
-txn NumAccounts
-int 1
->=
-assert
 global GroupSize
 int 2
 ==
@@ -228,67 +274,75 @@ txn GroupIndex
 int 1
 ==
 assert
-gtxn 0 TypeEnum
-int pay
-==
-assert
 gtxn 0 Sender
 txn Sender
+==
+assert
+gtxn 0 TypeEnum
+int pay
 ==
 assert
 gtxn 0 Receiver
 global CurrentApplicationAddress
 ==
 assert
-gtxn 0 Amount
 txna ApplicationArgs 1
 btoi
-==
-assert
-txna ApplicationArgs 1
-btoi
+store 0
+load 0
 int 0
 >
+assert
+gtxn 0 Amount
+load 0
+==
 assert
 txna ApplicationArgs 2
 btoi
+store 1
+load 1
 global LatestTimestamp
 >
 assert
-byte "bounty_count"
+txn NumAccounts
+int 0
+>
+bnz main_l24
+txn Sender
+main_l23:
+store 2
+byte "amount"
 app_global_get
 int 0
 ==
-bnz main_l25
 byte "status"
 app_global_get
 int 3
 ==
+||
 byte "status"
 app_global_get
 int 4
 ==
 ||
-bnz main_l24
-int 0
-return
-main_l24:
+assert
 byte "client_addr"
 txn Sender
 app_global_put
 byte "amount"
-txna ApplicationArgs 1
-btoi
+load 0
 app_global_put
 byte "deadline"
-txna ApplicationArgs 2
-btoi
+load 1
 app_global_put
 byte "task_desc"
 txna ApplicationArgs 3
 app_global_put
 byte "verifier_addr"
-txna Accounts 0
+load 2
+app_global_put
+byte "freelancer_addr"
+global ZeroAddress
 app_global_put
 byte "status"
 int 0
@@ -301,52 +355,50 @@ int 1
 app_global_put
 int 1
 return
-main_l25:
-byte "client_addr"
-txn Sender
-app_global_put
-byte "amount"
-txna ApplicationArgs 1
-btoi
-app_global_put
-byte "deadline"
-txna ApplicationArgs 2
-btoi
-app_global_put
-byte "task_desc"
-txna ApplicationArgs 3
-app_global_put
-byte "verifier_addr"
+main_l24:
 txna Accounts 0
-app_global_put
-byte "status"
-int 0
-app_global_put
-byte "bounty_count"
-int 1
-app_global_put
+b main_l23
+main_l25:
 int 1
 return
 main_l26:
 int 1
 return
 main_l27:
-int 1
-return
-main_l28:
 int 0
 return
-main_l29:
-byte "bounty_count"
+main_l28:
+byte "amount"
 app_global_get
 int 0
 ==
 assert
 int 1
 return
-main_l30:
+main_l29:
 byte "bounty_count"
 int 0
+app_global_put
+byte "client_addr"
+global ZeroAddress
+app_global_put
+byte "freelancer_addr"
+global ZeroAddress
+app_global_put
+byte "verifier_addr"
+global ZeroAddress
+app_global_put
+byte "amount"
+int 0
+app_global_put
+byte "deadline"
+int 0
+app_global_put
+byte "status"
+int 4
+app_global_put
+byte "task_desc"
+byte ""
 app_global_put
 int 1
 return

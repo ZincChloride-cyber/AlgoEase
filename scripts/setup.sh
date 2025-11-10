@@ -24,21 +24,21 @@ fi
 
 echo "✅ Prerequisites check passed"
 
-# Install Python dependencies
-echo "📦 Installing Python dependencies..."
-cd contracts
-pip install -r requirements.txt
-cd ..
-
 # Install Node.js dependencies
 echo "📦 Installing Node.js dependencies..."
 npm install
 
+# Install Python dependencies
+echo "📦 Installing Python dependencies..."
+cd projects/algoease-contracts
+pip install -r requirements.txt
+cd ../..
+
 # Install frontend dependencies
 echo "📦 Installing frontend dependencies..."
-cd frontend
+cd projects/algoease-frontend
 npm install
-cd ..
+cd ../..
 
 # Install backend dependencies
 echo "📦 Installing backend dependencies..."
@@ -69,9 +69,9 @@ fi
 
 # Compile smart contracts
 echo "🔨 Compiling smart contracts..."
-cd contracts
+cd projects/algoease-contracts
 python algoease_contract.py
-cd ..
+cd ../..
 
 echo "✅ Setup complete!"
 echo ""
@@ -79,8 +79,8 @@ echo "🎉 AlgoEase is ready for development!"
 echo ""
 echo "Next steps:"
 echo "1. Start the backend: cd backend && npm run dev"
-echo "2. Start the frontend: cd frontend && npm run dev"
-echo "3. Deploy contracts: python scripts/deploy.py testnet"
-echo "4. Run tests: python scripts/test_contract.py"
+echo "2. Start the frontend: cd projects/algoease-frontend && npm run dev"
+echo "3. Deploy contracts: cd projects/algoease-contracts && algokit project deploy localnet"
+echo "4. Run tests: cd projects/algoease-contracts && python test_contract.py"
 echo ""
 echo "Happy coding! 🚀"

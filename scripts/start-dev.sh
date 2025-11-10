@@ -25,7 +25,7 @@ sleep 3
 
 # Start frontend
 echo "🎨 Starting Frontend Server..."
-cd ../frontend
+cd ../projects/algoease-frontend
 npm install
 npm start &
 FRONTEND_PID=$!

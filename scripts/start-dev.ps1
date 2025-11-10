@@ -21,7 +21,7 @@ Start-Sleep -Seconds 3
 
 # Start frontend
 Write-Host "🎨 Starting Frontend Server..." -ForegroundColor Blue
-Set-Location ../frontend
+Set-Location ../projects/algoease-frontend
 npm install
 Start-Process -FilePath "npm" -ArgumentList "start" -WindowStyle Normal
 

@@ -1,10 +1,15 @@
 // Smart Contract Utilities for AlgoEase
 import algosdk from 'algosdk/dist/browser/algosdk.min.js';
+import { Buffer } from 'buffer';
+
+if (typeof window !== 'undefined' && !window.Buffer) {
+  window.Buffer = Buffer;
+}
 
 // Contract configuration
 const CONTRACT_CONFIG = {
   // These will be set after contract deployment
-  appId: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 748433709,
+  appId: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749335380,
   // TestNet configuration
   algodClient: new algosdk.Algodv2(
     '',
@@ -16,6 +21,54 @@ const CONTRACT_CONFIG = {
     process.env.REACT_APP_INDEXER_URL || 'https://testnet-idx.algonode.cloud',
     ''
   )
+};
+
+const textDecoder = typeof window !== 'undefined' ? new TextDecoder() : null;
+const ADDRESS_KEYS = new Set([
+  'client_addr',
+  'freelancer_addr',
+  'verifier_addr'
+]);
+
+const decodeStateKey = (key) => Buffer.from(key, 'base64').toString('utf8');
+
+const decodeBytesValue = (key, value) => {
+  if (!value) return null;
+  const bytes = Buffer.from(value, 'base64');
+
+  if (ADDRESS_KEYS.has(key) && bytes.length === 32) {
+    return algosdk.encodeAddress(new Uint8Array(bytes));
+  }
+
+  if (textDecoder) {
+    return textDecoder.decode(bytes);
+  }
+
+  return bytes.toString();
+};
+
+const normalizeSignedPayload = (payload) => {
+  if (!payload) {
+    throw new Error('Signed transaction payload is empty.');
+  }
+
+  if (payload instanceof Uint8Array) {
+    return payload;
+  }
+
+  if (typeof payload === 'string') {
+    return Uint8Array.from(Buffer.from(payload, 'base64'));
+  }
+
+  if (payload.blob) {
+    return Uint8Array.from(Buffer.from(payload.blob, 'base64'));
+  }
+
+  if (payload.signedTxn) {
+    return Uint8Array.from(Buffer.from(payload.signedTxn, 'base64'));
+  }
+
+  throw new Error('Unsupported signed transaction format.');
 };
 
 // Contract method constants
@@ -144,6 +197,10 @@ class ContractUtils {
       
       // Convert deadline to timestamp
       const deadlineTimestamp = Math.floor(new Date(deadline).getTime() / 1000);
+
+      if (!Number.isFinite(deadlineTimestamp)) {
+        throw new Error('Invalid deadline provided');
+      }
       
       // Validate deadline is in the future
       const now = Math.floor(Date.now() / 1000);
@@ -151,6 +208,10 @@ class ContractUtils {
         throw new Error('Deadline must be in the future');
       }
       
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Escrow amount must be greater than zero');
+      }
+
       // Convert amount to microALGO
       const amountMicroAlgo = Math.round(amount * 1000000);
 
@@ -172,8 +233,20 @@ class ContractUtils {
         'AlgoEase: Create Bounty'
       );
 
-      // Assign group ID to transactions
-      algosdk.assignGroupID([paymentTxn, appCallTxn]);
+      console.debug('createBounty: built transactions', {
+        paymentTxnType: paymentTxn?.constructor?.name,
+        appCallTxnType: appCallTxn?.constructor?.name,
+        paymentTxnKeys: paymentTxn ? Object.keys(paymentTxn).slice(0, 10) : null,
+        appCallTxnKeys: appCallTxn ? Object.keys(appCallTxn).slice(0, 10) : null,
+      });
+
+      // Assign group ID to transactions and return grouped instances
+      const groupedTxns = algosdk.assignGroupID([paymentTxn, appCallTxn]);
+
+      // Fallback to original references if assignGroupID mutates in-place
+      if (Array.isArray(groupedTxns) && groupedTxns.length === 2) {
+        return groupedTxns;
+      }
 
       return [paymentTxn, appCallTxn];
     } catch (error) {
@@ -298,17 +371,16 @@ class ContractUtils {
     try {
       const appInfo = await this.algodClient.getApplicationByID(this.appId).do();
       const globalState = appInfo.params['global-state'] || [];
-      
-      // Parse global state
+
       const parsedState = {};
-      globalState.forEach(item => {
-        const key = atob(item.key); // Decode base64 to string
+      globalState.forEach((item) => {
+        const key = decodeStateKey(item.key);
         const value = item.value;
-        
-        if (value.type === 1) { // uint64
+
+        if (value.type === 1) {
           parsedState[key] = value.uint;
-        } else if (value.type === 2) { // bytes
-          parsedState[key] = atob(value.bytes); // Decode base64 to string
+        } else if (value.type === 2) {
+          parsedState[key] = decodeBytesValue(key, value.bytes);
         }
       });
 
@@ -328,14 +400,18 @@ class ContractUtils {
         return null;
       }
 
+      const amountMicro = state[GLOBAL_STATE_KEYS.AMOUNT] || 0;
+      const deadlineSeconds = state[GLOBAL_STATE_KEYS.DEADLINE];
+      const deadlineDate = deadlineSeconds ? new Date(deadlineSeconds * 1000) : null;
+
       return {
         bountyCount: state[GLOBAL_STATE_KEYS.BOUNTY_COUNT],
         clientAddress: state[GLOBAL_STATE_KEYS.CLIENT_ADDR],
         freelancerAddress: state[GLOBAL_STATE_KEYS.FREELANCER_ADDR],
-        amount: state[GLOBAL_STATE_KEYS.AMOUNT] / 1000000, // Convert from microALGO to ALGO
-        deadline: new Date(state[GLOBAL_STATE_KEYS.DEADLINE] * 1000),
-        status: state[GLOBAL_STATE_KEYS.STATUS],
-        taskDescription: state[GLOBAL_STATE_KEYS.TASK_DESCRIPTION],
+        amount: amountMicro / 1000000, // Convert from microALGO to ALGO
+        deadline: deadlineDate || new Date(),
+        status: state[GLOBAL_STATE_KEYS.STATUS] ?? BOUNTY_STATUS.OPEN,
+        taskDescription: state[GLOBAL_STATE_KEYS.TASK_DESCRIPTION] || '',
         verifierAddress: state[GLOBAL_STATE_KEYS.VERIFIER_ADDR]
       };
     } catch (error) {
@@ -347,6 +423,7 @@ class ContractUtils {
   // Check if user can perform action
   canPerformAction(userAddress, action, bountyInfo) {
     if (!bountyInfo) return false;
+    if (!userAddress) return false;
 
     switch (action) {
       case 'accept':
@@ -370,6 +447,7 @@ class ContractUtils {
       case 'auto_refund':
         return (bountyInfo.status === BOUNTY_STATUS.OPEN || 
                 bountyInfo.status === BOUNTY_STATUS.ACCEPTED) &&
+               bountyInfo.deadline instanceof Date &&
                Date.now() / 1000 > bountyInfo.deadline.getTime() / 1000;
       
       default:
@@ -407,7 +485,8 @@ class ContractUtils {
   // Submit signed transaction
   async submitTransaction(signedTxn) {
     try {
-      const txId = await this.algodClient.sendRawTransaction(signedTxn).do();
+      const payload = normalizeSignedPayload(signedTxn);
+      const txId = await this.algodClient.sendRawTransaction(payload).do();
       return txId;
     } catch (error) {
       console.error('Failed to submit transaction:', error);
@@ -418,9 +497,11 @@ class ContractUtils {
   // Submit multiple transactions as a group
   async submitTransactionGroup(signedTxns) {
     try {
-      // The signed transactions are already in the correct format from Lute wallet
-      // We can submit them directly
-      const txId = await this.algodClient.sendRawTransaction(signedTxns).do();
+      const payload = Array.isArray(signedTxns)
+        ? signedTxns.map((txn) => normalizeSignedPayload(txn))
+        : normalizeSignedPayload(signedTxns);
+
+      const txId = await this.algodClient.sendRawTransaction(payload).do();
       return txId;
     } catch (error) {
       console.error('Failed to submit transaction group:', error);

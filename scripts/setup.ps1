@@ -78,9 +78,9 @@ if (!(Test-Path "backend/.env")) {
 
 # Compile smart contracts
 Write-Host "🔨 Compiling smart contracts..." -ForegroundColor Yellow
-Set-Location contracts
+Set-Location projects/algoease-contracts
 python algoease_contract.py
-Set-Location ..
+Set-Location ../..
 
 Write-Host "✅ Setup complete!" -ForegroundColor Green
 Write-Host ""
@@ -88,8 +88,8 @@ Write-Host "🎉 AlgoEase is ready for development!" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "1. Start the backend: cd backend && npm run dev" -ForegroundColor White
-Write-Host "2. Start the frontend: cd frontend && npm run dev" -ForegroundColor White
-Write-Host "3. Deploy contracts: python scripts/deploy.py testnet" -ForegroundColor White
-Write-Host "4. Run tests: python scripts/test_contract.py" -ForegroundColor White
+Write-Host "2. Start the frontend: cd projects/algoease-frontend && npm run dev" -ForegroundColor White
+Write-Host "3. Deploy contracts: cd projects/algoease-contracts && algokit project deploy localnet" -ForegroundColor White
+Write-Host "4. Run tests: cd projects/algoease-contracts && python test_contract.py" -ForegroundColor White
 Write-Host ""
 Write-Host "Happy coding! 🚀" -ForegroundColor Cyan

@@ -1,53 +1,61 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import contractUtils from '../utils/contractUtils';
 
+const statusStyles = {
+  open: { label: 'Open', badge: 'bg-gradient-to-r from-secondary-400/25 to-secondary-500/40 text-secondary-100 border border-secondary-300/40' },
+  accepted: { label: 'Accepted', badge: 'bg-gradient-to-r from-primary-500/20 to-primary-600/40 text-primary-100 border border-primary-300/40' },
+  approved: { label: 'Approved', badge: 'bg-gradient-to-r from-accent-400/25 to-accent-500/45 text-accent-50 border border-accent-300/40' },
+  claimed: { label: 'Claimed', badge: 'bg-white/10 text-white/80 border border-white/20' },
+  refunded: { label: 'Refunded', badge: 'bg-red-500/20 text-red-100 border border-red-400/40' },
+};
+
 const BountyDetail = () => {
   const { id } = useParams();
-  const { 
-    account, 
-    isConnected, 
-    contractState, 
-    isLoadingContract,
+  const {
+    account,
+    isConnected,
+    contractState,
     loadContractState,
     acceptBounty,
     approveBounty,
     claimBounty,
     refundBounty,
-    canPerformAction
+    canPerformAction,
   } = useWallet();
+
   const [bounty, setBounty] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Load contract state and set bounty data
   useEffect(() => {
     const loadBountyData = async () => {
       try {
         setLoading(true);
         await loadContractState();
-        
         if (contractState) {
-          const bountyData = {
+          const status = contractUtils.getStatusName(contractState.status);
+          setBounty({
             id: contractState.bountyCount,
-            title: 'Smart Contract Bounty',
-            description: contractState.taskDescription,
+            title: contractState.taskDescription
+              ? contractState.taskDescription.slice(0, 42) + (contractState.taskDescription.length > 42 ? '…' : '')
+              : 'Smart Contract Bounty',
+            description: contractState.taskDescription || 'This bounty is powered by Algorand smart contracts.',
             amount: contractState.amount,
             deadline: contractState.deadline,
-            status: contractUtils.getStatusName(contractState.status),
+            status,
             client: contractState.clientAddress,
             freelancer: contractState.freelancerAddress,
             verifier: contractState.verifierAddress,
             createdAt: new Date().toISOString(),
             requirements: [
-              'Complete the task as described',
-              'Submit work for verification',
-              'Meet the deadline requirements'
+              'Deliver work matching the description and milestones.',
+              'Submit artefacts or repository links for review.',
+              'Respect deadline blocks; refunds trigger automatically after expiry.',
             ],
-            submissions: []
-          };
-          setBounty(bountyData);
+            submissions: [],
+          });
         } else {
           setBounty(null);
         }
@@ -62,119 +70,73 @@ const BountyDetail = () => {
     loadBountyData();
   }, [id, contractState, loadContractState]);
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'open': return 'bg-green-100 text-green-800';
-      case 'accepted': return 'bg-blue-100 text-blue-800';
-      case 'approved': return 'bg-purple-100 text-purple-800';
-      case 'claimed': return 'bg-gray-100 text-gray-800';
-      case 'refunded': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  const actions = useMemo(() => {
+    if (!bounty) return [];
+    return [
+      bounty.status === 'open' && canPerformAction('accept') && {
+        label: 'Accept bounty',
+        action: 'accept',
+        handler: acceptBounty,
+        style: 'btn-primary',
+      },
+      bounty.status === 'accepted' && canPerformAction('approve') && {
+        label: 'Approve work',
+        action: 'approve',
+        handler: approveBounty,
+        style: 'btn-primary',
+      },
+      bounty.status === 'approved' && canPerformAction('claim') && {
+        label: 'Claim payment',
+        action: 'claim',
+        handler: claimBounty,
+        style: 'btn-secondary',
+      },
+      canPerformAction('refund') && {
+        label: 'Initiate refund',
+        action: 'refund',
+        handler: refundBounty,
+        style: 'btn-outline',
+      },
+    ].filter(Boolean);
+  }, [bounty, canPerformAction, acceptBounty, approveBounty, claimBounty, refundBounty]);
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+  const formatDate = (value) => {
+    if (!value) {
+      return '—';
+    }
+
+    return new Date(value).toLocaleDateString('en-US', {
       year: 'numeric',
-      month: 'long',
+      month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
   };
 
-  const formatAddress = (address) => {
-    if (!address) return '';
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
-  };
+  const formatAddress = (address) => (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '');
 
-  const handleAcceptBounty = async () => {
+  const handleAction = async (action) => {
     if (!isConnected) {
       alert('Please connect your wallet first');
       return;
     }
 
-    if (!canPerformAction('accept')) {
-      alert('You cannot accept this bounty at this time');
+    const selected = actions.find((item) => item.action === action);
+    if (!selected) return;
+
+    if (!canPerformAction(action)) {
+      alert(`You cannot ${action} this bounty at this time`);
       return;
     }
 
     try {
       setActionLoading(true);
-      const txId = await acceptBounty();
-      alert(`Bounty accepted successfully! Transaction ID: ${txId}`);
+      const txId = await selected.handler();
+      alert(`Success! Transaction ID: ${txId}`);
     } catch (error) {
-      console.error('Failed to accept bounty:', error);
-      alert('Failed to accept bounty: ' + error.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleApproveBounty = async () => {
-    if (!isConnected) {
-      alert('Please connect your wallet first');
-      return;
-    }
-
-    if (!canPerformAction('approve')) {
-      alert('You cannot approve this bounty at this time');
-      return;
-    }
-
-    try {
-      setActionLoading(true);
-      const txId = await approveBounty();
-      alert(`Bounty approved successfully! Transaction ID: ${txId}`);
-    } catch (error) {
-      console.error('Failed to approve bounty:', error);
-      alert('Failed to approve bounty: ' + error.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleClaimBounty = async () => {
-    if (!isConnected) {
-      alert('Please connect your wallet first');
-      return;
-    }
-
-    if (!canPerformAction('claim')) {
-      alert('You cannot claim this bounty at this time');
-      return;
-    }
-
-    try {
-      setActionLoading(true);
-      const txId = await claimBounty();
-      alert(`Bounty claimed successfully! Transaction ID: ${txId}`);
-    } catch (error) {
-      console.error('Failed to claim bounty:', error);
-      alert('Failed to claim bounty: ' + error.message);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleRefundBounty = async () => {
-    if (!isConnected) {
-      alert('Please connect your wallet first');
-      return;
-    }
-
-    if (!canPerformAction('refund')) {
-      alert('You cannot refund this bounty at this time');
-      return;
-    }
-
-    try {
-      setActionLoading(true);
-      const txId = await refundBounty();
-      alert(`Bounty refunded successfully! Transaction ID: ${txId}`);
-    } catch (error) {
-      console.error('Failed to refund bounty:', error);
-      alert('Failed to refund bounty: ' + error.message);
+      console.error(`Failed to ${action} bounty:`, error);
+      alert(`Failed to ${action} bounty: ${error.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -182,182 +144,187 @@ const BountyDetail = () => {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center py-16">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading bounty details...</p>
-        </div>
+      <div className="glass-card mx-auto max-w-4xl p-12 text-center">
+        <div className="mx-auto h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-secondary-300"></div>
+        <p className="mt-4 text-sm text-white/60">Syncing bounty details from the blockchain…</p>
       </div>
     );
   }
 
   if (!bounty) {
     return (
-      <div className="max-w-4xl mx-auto text-center py-16">
-        <h2 className="text-2xl font-bold mb-4">Bounty Not Found</h2>
-        <p className="text-gray-600">The requested bounty could not be found.</p>
+      <div className="glass-card mx-auto max-w-3xl p-12 text-center">
+        <h2 className="text-2xl font-semibold text-white">Bounty not found</h2>
+        <p className="mt-3 text-sm text-white/60">This bounty may have been closed or the ID is invalid.</p>
       </div>
     );
   }
 
+  const statusStyle = statusStyles[bounty.status] || statusStyles.open;
+
   return (
-    <div className="max-w-4xl mx-auto">
-      {/* Header */}
-      <div className="card mb-6">
-        <div className="flex justify-between items-start mb-6">
-          <div className="flex-1">
-            <h1 className="text-3xl font-bold mb-4">{bounty.title}</h1>
-            <div className="flex items-center space-x-4 text-sm text-gray-500">
-              <span>Created by {formatAddress(bounty.client)}</span>
-              <span>•</span>
-              <span>Created {formatDate(bounty.createdAt)}</span>
-              <span>•</span>
-              <span>Deadline: {formatDate(bounty.deadline)}</span>
-            </div>
-          </div>
-          <div className="text-right ml-6">
-            <div className="text-3xl font-bold text-primary-600 mb-2">
-              {bounty.amount} ALGO
-            </div>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(bounty.status)}`}>
-              {bounty.status.charAt(0).toUpperCase() + bounty.status.slice(1)}
-            </span>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex space-x-4">
-          {bounty.status === 'open' && canPerformAction('accept') && (
-            <button
-              onClick={handleAcceptBounty}
-              className="btn-primary"
-              disabled={actionLoading}
-            >
-              {actionLoading ? 'Processing...' : 'Accept Bounty'}
-            </button>
-          )}
-          {bounty.status === 'accepted' && canPerformAction('approve') && (
-            <button
-              onClick={handleApproveBounty}
-              className="btn-primary"
-              disabled={actionLoading}
-            >
-              {actionLoading ? 'Processing...' : 'Approve Work'}
-            </button>
-          )}
-          {bounty.status === 'approved' && canPerformAction('claim') && (
-            <button
-              onClick={handleClaimBounty}
-              className="btn-secondary"
-              disabled={actionLoading}
-            >
-              {actionLoading ? 'Processing...' : 'Claim Payment'}
-            </button>
-          )}
-          {canPerformAction('refund') && (
-            <button
-              onClick={handleRefundBounty}
-              className="btn-outline"
-              disabled={actionLoading}
-            >
-              {actionLoading ? 'Processing...' : 'Refund Bounty'}
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Description */}
-      <div className="card mb-6">
-        <h2 className="text-xl font-semibold mb-4">Description</h2>
-        <div className="prose max-w-none">
-          <p className="text-gray-700 whitespace-pre-line">{bounty.description}</p>
-        </div>
-      </div>
-
-      {/* Requirements */}
-      <div className="card mb-6">
-        <h2 className="text-xl font-semibold mb-4">Requirements</h2>
-        <ul className="space-y-2">
-          {bounty.requirements.map((requirement, index) => (
-            <li key={index} className="flex items-start">
-              <span className="text-primary-600 mr-2">•</span>
-              <span className="text-gray-700">{requirement}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* Timeline */}
-      <div className="card mb-6">
-        <h2 className="text-xl font-semibold mb-4">Timeline</h2>
-        <div className="space-y-4">
-          <div className="flex items-center">
-            <div className="w-3 h-3 bg-primary-600 rounded-full mr-3"></div>
-            <div>
-              <div className="font-medium">Bounty Created</div>
-              <div className="text-sm text-gray-500">{formatDate(bounty.createdAt)}</div>
-            </div>
-          </div>
-          
-          {bounty.status !== 'open' && (
-            <div className="flex items-center">
-              <div className="w-3 h-3 bg-blue-600 rounded-full mr-3"></div>
-              <div>
-                <div className="font-medium">Bounty Accepted</div>
-                <div className="text-sm text-gray-500">By freelancer</div>
-              </div>
-            </div>
-          )}
-          
-          {bounty.status === 'approved' && (
-            <div className="flex items-center">
-              <div className="w-3 h-3 bg-purple-600 rounded-full mr-3"></div>
-              <div>
-                <div className="font-medium">Work Approved</div>
-                <div className="text-sm text-gray-500">Ready for payment</div>
-              </div>
-            </div>
-          )}
-          
-          <div className="flex items-center">
-            <div className="w-3 h-3 bg-gray-400 rounded-full mr-3"></div>
-            <div>
-              <div className="font-medium">Deadline</div>
-              <div className="text-sm text-gray-500">{formatDate(bounty.deadline)}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Submissions (if any) */}
-      {bounty.submissions && bounty.submissions.length > 0 && (
-        <div className="card">
-          <h2 className="text-xl font-semibold mb-4">Submissions</h2>
+    <div className="space-y-10">
+      <section className="glass-card glow-border p-10">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-4">
-            {bounty.submissions.map((submission, index) => (
-              <div key={index} className="border border-gray-200 rounded-lg p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="font-medium">Submission #{index + 1}</div>
-                  <span className="text-sm text-gray-500">
-                    {formatDate(submission.submittedAt)}
-                  </span>
-                </div>
-                <p className="text-gray-700 mb-3">{submission.description}</p>
-                <div className="flex space-x-2">
-                  <a
-                    href={submission.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-outline text-sm"
-                  >
-                    View Work
-                  </a>
-                </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="tag">Bounty #{bounty.id || '—'}</span>
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] ${statusStyle.badge}`}>
+                {statusStyle.label}
+              </span>
+            </div>
+            <h1 className="text-3xl font-semibold text-white md:text-4xl">{bounty.title}</h1>
+            <p className="text-sm text-white/60">{bounty.description}</p>
+            <div className="glass-panel grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-white/70 md:grid-cols-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.32em] text-white/40">Client</p>
+                <p className="mt-2 font-medium text-white">{formatAddress(bounty.client)}</p>
               </div>
-            ))}
+              <div>
+                <p className="text-xs uppercase tracking-[0.32em] text-white/40">Created</p>
+                <p className="mt-2 font-medium text-white">{formatDate(bounty.createdAt)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.32em] text-white/40">Deadline</p>
+                <p className="mt-2 font-medium text-white">{formatDate(bounty.deadline)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-end gap-6">
+            <div className="glass-panel rounded-2xl border border-white/10 bg-white/5 px-8 py-6 text-right">
+              <p className="text-xs uppercase tracking-[0.32em] text-white/40">Reward</p>
+              <p className="mt-3 text-4xl font-semibold text-white">{bounty.amount} ALGO</p>
+              <p className="text-xs text-white/45">Secured in escrow</p>
+            </div>
+            <div className="flex flex-col gap-3 md:flex-row">
+              {actions.length === 0 ? (
+                <span className="text-xs text-white/45">No actions available at this stage.</span>
+              ) : (
+                actions.map(({ action, label, style }) => (
+                  <button
+                    key={action}
+                    type="button"
+                    className={`${style} text-sm`}
+                    onClick={() => handleAction(action)}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? 'Processing…' : label}
+                  </button>
+                ))
+              )}
+            </div>
+            <p className="text-xs text-white/40">Viewer wallet: {account ? formatAddress(account) : 'Not connected'}</p>
           </div>
         </div>
-      )}
+      </section>
+
+      <section className="grid gap-8 lg:grid-cols-[1.1fr,0.9fr]">
+        <div className="space-y-8">
+          <div className="glass-panel p-8">
+            <h2 className="text-xl font-semibold text-white">Requirements</h2>
+            <p className="mt-2 text-sm text-white/60">
+              Meet each requirement to ensure approval and instant payout. All checkpoints are recorded on-chain for transparency.
+            </p>
+            <ul className="mt-6 space-y-4 text-sm text-white/70">
+              {bounty.requirements.map((requirement, index) => (
+                <li key={requirement} className="flex gap-3">
+                  <span className="mt-1 inline-flex h-2 w-2 rounded-full bg-secondary-400"></span>
+                  <span>{requirement}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="glass-panel p-8">
+            <h2 className="text-xl font-semibold text-white">On-chain timeline</h2>
+            <p className="mt-2 text-sm text-white/60">
+              Status transitions and relevant wallet signatures are logged automatically. Use them to resolve disputes quickly.
+            </p>
+            <div className="mt-6 space-y-5">
+              <div className="flex items-start gap-4">
+                <div className="mt-1 h-3 w-3 rounded-full bg-primary-500"></div>
+                <div>
+                  <p className="text-sm font-semibold text-white">Bounty created</p>
+                  <p className="text-xs text-white/50">{formatDate(bounty.createdAt)}</p>
+                </div>
+              </div>
+              {bounty.status !== 'open' && (
+                <div className="flex items-start gap-4">
+                  <div className="mt-1 h-3 w-3 rounded-full bg-secondary-400"></div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Accepted by contributor</p>
+                    <p className="text-xs text-white/50">
+                      {bounty.freelancer ? formatAddress(bounty.freelancer) : 'Awaiting signer'}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {bounty.status === 'approved' && (
+                <div className="flex items-start gap-4">
+                  <div className="mt-1 h-3 w-3 rounded-full bg-accent-400"></div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Work approved</p>
+                    <p className="text-xs text-white/50">Payment ready for claim</p>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-start gap-4">
+                <div className="mt-1 h-3 w-3 rounded-full bg-white/30"></div>
+                <div>
+                  <p className="text-sm font-semibold text-white">Deadline</p>
+                  <p className="text-xs text-white/50">{formatDate(bounty.deadline)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <aside className="space-y-8">
+          <div className="glass-panel p-8">
+            <h2 className="text-xl font-semibold text-white">Role summary</h2>
+            <div className="mt-5 space-y-4 text-sm text-white/70">
+              <div className="glass-card rounded-2xl border border-white/10 bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.32em] text-white/40">Client</p>
+                <p className="mt-2 text-white">{formatAddress(bounty.client)}</p>
+              </div>
+              <div className="glass-card rounded-2xl border border-white/10 bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.32em] text-white/40">Verifier</p>
+                <p className="mt-2 text-white">
+                  {bounty.verifier ? formatAddress(bounty.verifier) : 'Pending assignment'}
+                </p>
+              </div>
+              <div className="glass-card rounded-2xl border border-white/10 bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.32em] text-white/40">Freelancer</p>
+                <p className="mt-2 text-white">
+                  {bounty.freelancer ? formatAddress(bounty.freelancer) : 'Not yet accepted'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-card glow-border p-8">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.3em] text-white/60">Need to submit?</h3>
+            <p className="mt-3 text-sm text-white/65">
+              Share GitHub repositories, design files, or documentation links in your submission payload. Keep logs and proof of work for faster verification.
+            </p>
+            <ul className="mt-6 space-y-3 text-xs text-white/50">
+              <li className="flex gap-2">
+                <span className="mt-1 h-1 w-1 rounded-full bg-secondary-400"></span>
+                Pin large files and share IPFS / Arweave hashes.
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-1 h-1 w-1 rounded-full bg-secondary-400"></span>
+                Include quick Loom or Figma walkthroughs for context.
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-1 h-1 w-1 rounded-full bg-secondary-400"></span>
+                Document anything the verifier must confirm before release.
+              </li>
+            </ul>
+          </div>
+        </aside>
+      </section>
     </div>
   );
 };

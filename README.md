@@ -21,37 +21,142 @@ AlgoEase solves the trust problem in freelance work by locking funds in a smart 
 1. **Create Bounty**: Client posts a task and deposits payment to escrow
 2. **Accept Task**: Freelancer accepts and commits to complete the work
 3. **Approve Work**: Client/verifier approves the completed work
-4. **Claim Payment**: Funds automatically release to freelancer from escrow
+4. **Claim Payment**: Funds automatically release to the freelancer
 
-If work isn't approved, the client can request a refund.
-
-## Project Structure
-
-```
-AlgoEase/
-├── frontend/          # React web application
-│   └── src/
-│       ├── pages/     # Main pages (Home, CreateBounty, BountyList, etc.)
-│       ├── components/# Reusable UI components
-│       ├── contexts/  # React context (Wallet)
-│       └── utils/     # Helper functions (contract, API, wallet)
-│
-├── backend/           # Node.js/Express API server
-│   ├── routes/        # API endpoints
-│   ├── models/        # MongoDB models
-│   └── middleware/    # Auth and validation
-│
-├── contracts/         # Algorand smart contracts
-│   ├── algoease_contract.py  # Main PyTeal contract
-│   └── *.teal         # Compiled TEAL bytecode
-│
-└── scripts/           # Deployment and testing scripts
-```
+If work isn't approved, the client can request a refund that returns funds from escrow.
 
 ## Prerequisites
 
-- Node.js v16+
-- Python v3.8+
+- Node.js 20+ and npm 9+
+- Python 3.12+ and pip
+- AlgoKit CLI 2.0.0+ ([Install](https://github.com/algorandfoundation/algokit-cli))
+- Docker (for running Algorand LocalNet)
+- MongoDB (local or Atlas) for backend persistence
+- Algorand wallet (Pera Wallet recommended) and TestNet ALGO for contract actions
+
+## Getting Started
+
+### 1. Install Dependencies
+
+```bash
+# Bootstrap the project
+npm run install:all
+
+# Or use AlgoKit to bootstrap
+algokit project bootstrap all
+```
+
+### 2. Start LocalNet
+
+```bash
+# Start Algorand LocalNet
+npm run localnet:start
+# or
+algokit localnet start
+
+# Verify LocalNet is running
+npm run localnet:status
+# or
+algokit localnet status
+
+# Open Lora Explorer
+npm run localnet:explorer
+# or
+algokit localnet explorer
+```
+
+### 3. Deploy Smart Contracts
+
+```bash
+# Deploy to LocalNet
+cd projects/algoease-contracts
+algokit project deploy localnet
+
+# Or from root
+npm run deploy:localnet
+```
+
+### 4. Start the Frontend
+
+```bash
+cd projects/algoease-frontend
+
+# Copy the environment configuration
+cp .env.example .env
+
+# Start the development server
+npm run dev
+```
+
+The application will be available at `http://localhost:3000`.
+
+### 5. Configure Environment Variables
+
+Create a `.env` file in `projects/algoease-frontend` and set:
+
+```env
+REACT_APP_CONTRACT_APP_ID=<your_deployed_app_id>
+REACT_APP_CONTRACT_ADDRESS=<your_contract_address>
+REACT_APP_ALGOD_URL=http://localhost:4001
+REACT_APP_INDEXER_URL=http://localhost:8980
+REACT_APP_NETWORK=localnet
+```
+
+For TestNet:
+
+```env
+REACT_APP_ALGOD_URL=https://testnet-api.algonode.cloud
+REACT_APP_INDEXER_URL=https://testnet-idx.algonode.cloud
+REACT_APP_NETWORK=testnet
+```
+
+## 📁 Project Structure
+
+```
+AlgoEase/
+├── projects/                    # Main projects directory
+│   ├── algoease-contracts/      # PyTeal smart contracts
+│   │   ├── algoease_contract.py
+│   │   ├── algoease_v2_contract.py
+│   │   ├── algoease_approval.teal
+│   │   ├── algoease_clear.teal
+│   │   ├── test_contract.py
+│   │   ├── requirements.txt
+│   │   ├── package.json
+│   │   └── .algokit.toml
+│   │
+│   └── algoease-frontend/       # React frontend application
+│       ├── src/
+│       │   ├── components/
+│       │   ├── contexts/
+│       │   ├── pages/
+│       │   ├── utils/
+│       │   └── config/
+│       ├── public/
+│       ├── tailwind.config.js
+│       ├── package.json
+│       └── .env.example
+│
+├── backend/                     # Node.js API server
+│   ├── routes/
+│   ├── models/
+│   ├── middleware/
+│   ├── config/
+│   └── server.js
+│
+├── contracts/                   # Legacy contract sources
+├── scripts/                     # Deployment and testing scripts
+├── docs/                        # Supplementary documentation
+├── .algokit.toml                # Root AlgoKit configuration
+├── algokit.toml                 # Legacy Algokit config
+├── package.json                 # Root package.json with scripts
+└── README.md                    # This file
+```
+
+## Additional Setup Notes
+
+- Node.js v20+ (earlier versions may work but are not officially tested)
+- Python v3.12+
 - MongoDB (local or Atlas)
 - Algorand wallet (Pera Wallet recommended)
 - TestNet ALGO ([Get free ALGO here](https://bank.testnet.algorand.network/))

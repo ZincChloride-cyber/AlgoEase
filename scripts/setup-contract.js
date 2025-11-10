@@ -13,7 +13,7 @@ const path = require('path');
 // Configuration template
 const envTemplate = `
 # AlgoEase Smart Contract Configuration
-# Copy this to frontend/.env and fill in the values
+# Copy this to projects/algoease-frontend/.env and fill in the values
 
 # Contract App ID (set after deployment)
 REACT_APP_CONTRACT_APP_ID=
@@ -38,7 +38,7 @@ First, compile and deploy the smart contract:
 
 \`\`\`bash
 # Navigate to contracts directory
-cd contracts
+cd projects/algoease-contracts
 
 # Install Python dependencies
 pip install -r requirements.txt
@@ -61,7 +61,7 @@ goal app create --creator [CREATOR_ADDRESS] --approval-prog algoease_approval.te
 
 ## 3. Configure Frontend
 
-1. Copy the environment template to frontend/.env
+1. Copy the environment template to projects/algoease-frontend/.env
 2. Set the REACT_APP_CONTRACT_APP_ID to your deployed contract ID
 3. Configure other environment variables as needed
 
@@ -69,7 +69,7 @@ goal app create --creator [CREATOR_ADDRESS] --approval-prog algoease_approval.te
 
 \`\`\`bash
 # Navigate to frontend directory
-cd frontend
+cd projects/algoease-frontend
 
 # Install dependencies
 npm install
@@ -95,7 +95,7 @@ npm start
 `;
 
 function createEnvFile() {
-  const frontendPath = path.join(__dirname, '..', 'frontend');
+  const frontendPath = path.join(__dirname, '..', 'projects', 'algoease-frontend');
   const envPath = path.join(frontendPath, '.env');
   
   if (fs.existsSync(envPath)) {
@@ -114,7 +114,7 @@ function createSetupGuide() {
 }
 
 function checkDependencies() {
-  const frontendPath = path.join(__dirname, '..', 'frontend');
+  const frontendPath = path.join(__dirname, '..', 'projects', 'algoease-frontend');
   const packageJsonPath = path.join(frontendPath, 'package.json');
   
   if (!fs.existsSync(packageJsonPath)) {
@@ -141,7 +141,7 @@ function main() {
   console.log('🚀 Setting up AlgoEase Smart Contract Integration...\n');
   
   // Check if we're in the right directory
-  if (!fs.existsSync(path.join(__dirname, '..', 'frontend'))) {
+  if (!fs.existsSync(path.join(__dirname, '..', 'projects', 'algoease-frontend'))) {
     console.log('❌ Please run this script from the project root directory');
     process.exit(1);
   }
@@ -158,8 +158,8 @@ function main() {
   console.log('\n🎉 Setup complete!');
   console.log('\nNext steps:');
   console.log('1. Deploy the smart contract (see SMART_CONTRACT_SETUP.md)');
-  console.log('2. Set REACT_APP_CONTRACT_APP_ID in frontend/.env');
-  console.log('3. Start the frontend: cd frontend && npm start');
+  console.log('2. Set REACT_APP_CONTRACT_APP_ID in projects/algoease-frontend/.env');
+  console.log('3. Start the frontend: cd projects/algoease-frontend && npm start');
   console.log('\nFor detailed instructions, see SMART_CONTRACT_SETUP.md');
 }
 

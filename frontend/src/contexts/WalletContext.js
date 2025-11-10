@@ -1,13 +1,237 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import algosdk from 'algosdk/dist/browser/algosdk.min.js';
-import LuteConnect from 'lute-connect';
 import { PeraWalletConnect } from '@perawallet/connect';
+import { Buffer } from 'buffer';
 import contractUtils from '../utils/contractUtils';
+
+if (typeof window !== 'undefined' && !window.Buffer) {
+  window.Buffer = Buffer;
+}
 
 const WalletContext = createContext();
 
-// Initialize wallet connections outside component to avoid re-initialization
-const luteWallet = new LuteConnect('AlgoEase');
+const ADDRESS_REGEX = /^[A-Z2-7]{58}$/;
+
+const toBytes = (value) => {
+  if (!value) return undefined;
+
+  if (value.type === 'Buffer' && Array.isArray(value.data)) {
+    return new Uint8Array(value.data);
+  }
+
+  if (Array.isArray(value)) {
+    return Uint8Array.from(value);
+  }
+
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+
+  if (typeof value === 'object' && value.buffer instanceof ArrayBuffer) {
+    return new Uint8Array(value.buffer);
+  }
+
+  if (typeof value === 'string') {
+    if (ADDRESS_REGEX.test(value)) {
+      try {
+        return algosdk.decodeAddress(value).publicKey;
+      } catch (err) {
+        console.warn('[wallet] Failed to decode address string:', err);
+      }
+    }
+
+    try {
+      return Uint8Array.from(Buffer.from(value, 'base64'));
+    } catch (err) {
+      console.warn('[wallet] Failed to decode base64 string:', err);
+    }
+  }
+
+  return value;
+};
+
+const instantiateTxnIfPossible = (txnLike) => {
+  if (!txnLike || typeof txnLike !== 'object') {
+    return null;
+  }
+
+  if (typeof txnLike.get_obj_for_encoding === 'function') {
+    return txnLike;
+  }
+
+  if (typeof algosdk.Transaction === 'function') {
+    try {
+      return new algosdk.Transaction(txnLike);
+    } catch (err) {
+      console.warn('[wallet] Failed to instantiate transaction via Transaction constructor:', err);
+    }
+  }
+
+  return null;
+};
+
+const buildEncodingObject = (txnLike) => {
+  if (!txnLike || typeof txnLike !== 'object') {
+    throw new Error('Invalid transaction payload received from wallet.');
+  }
+
+  if (typeof txnLike.get_obj_for_encoding === 'function') {
+    return txnLike.get_obj_for_encoding();
+  }
+
+  const obj = {};
+
+  const type =
+    txnLike.type ||
+    (txnLike.tag ? Buffer.from(toBytes(txnLike.tag) || []).toString() : undefined);
+
+  if (!type) {
+    throw new Error('Transaction type missing from wallet payload.');
+  }
+
+  obj.type = type;
+
+  const snd = toBytes(txnLike.snd || txnLike.from?.publicKey);
+  if (snd) obj.snd = snd;
+
+  const rcv = toBytes(txnLike.rcv || txnLike.to?.publicKey);
+  if (rcv) obj.rcv = rcv;
+
+  const fee = txnLike.fee ?? txnLike.fee ?? txnLike.fe;
+  if (fee !== undefined) obj.fee = fee;
+
+  const fv = txnLike.fv ?? txnLike.firstRound;
+  if (fv !== undefined) obj.fv = fv;
+
+  const lv = txnLike.lv ?? txnLike.lastRound;
+  if (lv !== undefined) obj.lv = lv;
+
+  const gh = toBytes(txnLike.gh || txnLike.genesisHash);
+  if (gh) obj.gh = gh;
+
+  const gen = txnLike.gen || txnLike.genesisID;
+  if (gen) obj.gen = gen;
+
+  const grp = toBytes(txnLike.grp || txnLike.group);
+  if (grp && grp.length > 0) obj.grp = grp;
+
+  const lx = toBytes(txnLike.lx || txnLike.lease);
+  if (lx && lx.length > 0) obj.lx = lx;
+
+  const note = toBytes(txnLike.note);
+  if (note && note.length > 0) obj.note = note;
+
+  const amt = txnLike.amt ?? txnLike.amount;
+  if (amt !== undefined) obj.amt = amt;
+
+  if (Array.isArray(txnLike.appArgs)) {
+    obj.apaa = txnLike.appArgs.map(toBytes);
+  } else if (Array.isArray(txnLike.apaa)) {
+    obj.apaa = txnLike.apaa.map(toBytes);
+  }
+
+  if (Array.isArray(txnLike.appAccounts)) {
+    obj.apat = txnLike.appAccounts.map((account) => {
+      if (account?.publicKey) {
+        return toBytes(account.publicKey);
+      }
+      if (typeof account === 'string') {
+        return toBytes(account);
+      }
+      return toBytes(account);
+    });
+  } else if (Array.isArray(txnLike.apat)) {
+    obj.apat = txnLike.apat.map(toBytes);
+  }
+
+  if (txnLike.appIndex !== undefined) {
+    obj.apid = txnLike.appIndex;
+  } else if (txnLike.apid !== undefined) {
+    obj.apid = txnLike.apid;
+  }
+
+  if (txnLike.appOnComplete !== undefined) {
+    obj.apan = txnLike.appOnComplete;
+  } else if (txnLike.apan !== undefined) {
+    obj.apan = txnLike.apan;
+  }
+
+  return obj;
+};
+
+const encodeUnsignedTxnToBase64 = (txn) => {
+  if (!txn) {
+    throw new Error('Attempted to encode an empty transaction.');
+  }
+
+  const instantiatedTxn = instantiateTxnIfPossible(txn);
+
+  console.log('[wallet] encodeUnsignedTxnToBase64: received payload', {
+    type: typeof txn,
+    isArray: Array.isArray(txn),
+    hasTxn: txn && typeof txn === 'object' && ('txn' in txn || '_txn' in txn || 'transaction' in txn),
+    keys: txn && typeof txn === 'object' ? Object.keys(txn) : null,
+    sample: txn && typeof txn === 'object' ? JSON.parse(JSON.stringify(txn, (_, value) => (typeof value === 'bigint' ? Number(value) : value))) : txn,
+  });
+
+  try {
+    if (txn instanceof Uint8Array) {
+      return Buffer.from(txn).toString('base64');
+    }
+
+    if (instantiatedTxn) {
+      const txnBytes = algosdk.encodeUnsignedTransaction(instantiatedTxn);
+      return Buffer.from(txnBytes).toString('base64');
+    }
+
+    if (typeof txn === 'string') {
+      return txn;
+    }
+
+    const encodingObject = buildEncodingObject(txn);
+
+    console.debug('[wallet] encodeUnsignedTxnToBase64: encoding object', {
+      keys: Object.keys(encodingObject),
+    });
+
+    const txnBytes = algosdk.encodeObj(encodingObject);
+    return Buffer.from(txnBytes).toString('base64');
+  } catch (error) {
+    console.error('[wallet] encodeUnsignedTxnToBase64: failed to encode transaction', {
+      error,
+    });
+    throw error;
+  }
+};
+
+const normalizeSignedTxn = (signedTxn) => {
+  if (!signedTxn) {
+    throw new Error('Signed transaction payload is empty.');
+  }
+
+  if (signedTxn instanceof Uint8Array) {
+    return signedTxn;
+  }
+
+  if (Array.isArray(signedTxn) && signedTxn.length > 0) {
+    return normalizeSignedTxn(signedTxn[0]);
+  }
+
+  if (signedTxn.blob) {
+    return Uint8Array.from(Buffer.from(signedTxn.blob, 'base64'));
+  }
+
+  if (typeof signedTxn === 'string') {
+    return Uint8Array.from(Buffer.from(signedTxn, 'base64'));
+  }
+
+  if (signedTxn.signedTxn) {
+    return Uint8Array.from(Buffer.from(signedTxn.signedTxn, 'base64'));
+  }
+
+  throw new Error('Unsupported signed transaction format returned by wallet.');
+};
+
 const peraWallet = new PeraWalletConnect({
   chainId: 416002, // TestNet chain ID (416001 for MainNet)
 });
@@ -26,7 +250,6 @@ export const WalletProvider = ({ children }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [contractState, setContractState] = useState(null);
   const [isLoadingContract, setIsLoadingContract] = useState(false);
-  const [walletType, setWalletType] = useState(null); // 'pera' or 'lute'
 
   // Algorand TestNet configuration
   const algodClient = new algosdk.Algodv2(
@@ -44,7 +267,6 @@ export const WalletProvider = ({ children }) => {
         if (accounts.length > 0) {
           setAccount(accounts[0]);
           setIsConnected(true);
-          setWalletType('pera');
           console.log('Pera Wallet reconnected:', accounts[0]);
         }
       })
@@ -53,45 +275,25 @@ export const WalletProvider = ({ children }) => {
       });
   }, []);
 
-  const connectWallet = async (walletId = 'pera') => {
+  const connectWallet = async () => {
     try {
       setIsConnecting(true);
-      console.log('Connecting to wallet:', walletId);
+      console.log('Initializing Pera Wallet connection...');
+
+      const accounts = await peraWallet.connect();
+      console.log('Pera Wallet returned accounts:', accounts);
       
-      if (walletId === 'pera') {
-        console.log('Initializing Pera Wallet connection...');
-        // Connect to Pera Wallet
-        const accounts = await peraWallet.connect();
-        console.log('Pera Wallet returned accounts:', accounts);
+      if (accounts && accounts.length > 0) {
+        setAccount(accounts[0]);
+        setIsConnected(true);
+        console.log('✅ Pera Wallet connected successfully:', accounts[0]);
         
-        if (accounts && accounts.length > 0) {
-          setAccount(accounts[0]);
-          setIsConnected(true);
-          setWalletType('pera');
-          console.log('✅ Pera Wallet connected successfully:', accounts[0]);
-          
-          // Listen for disconnect events
-          peraWallet.connector?.on('disconnect', () => {
-            console.log('Pera Wallet disconnected');
-            disconnectWallet();
-          });
-          
-          return;
-        }
-      } else if (walletId === 'lute') {
-        console.log('Initializing Lute Wallet connection...');
-        // Connect to Lute Wallet using lute-connect
-        const genesis = await algodClient.genesis().do();
-        const genesisID = `${genesis.network}-${genesis.id}`;
-        const addresses = await luteWallet.connect(genesisID);
+        peraWallet.connector?.on('disconnect', () => {
+          console.log('Pera Wallet disconnected');
+          disconnectWallet();
+        });
         
-        if (addresses && addresses.length > 0) {
-          setAccount(addresses[0]);
-          setIsConnected(true);
-          setWalletType('lute');
-          console.log('✅ Lute Wallet connected successfully:', addresses[0]);
-          return;
-        }
+        return;
       }
       
       throw new Error('Failed to connect wallet. Please try again.');
@@ -113,126 +315,66 @@ export const WalletProvider = ({ children }) => {
 
   const disconnectWallet = async () => {
     try {
-      if (walletType === 'pera') {
-        await peraWallet.disconnect();
-      }
-      // Lute wallet doesn't require explicit disconnect
+      await peraWallet.disconnect();
       
       setAccount(null);
       setIsConnected(false);
-      setWalletType(null);
       console.log('Wallet disconnected');
     } catch (error) {
       console.error('Failed to disconnect wallet:', error);
     }
   };
 
-  const signTransaction = async (txn) => {
-    try {
+  const signTransactionGroup = useCallback(
+    async (txns) => {
       if (!isConnected) {
         throw new Error('No wallet connected. Please connect your wallet first.');
       }
-      
-      if (walletType === 'pera') {
-        // Sign transaction using Pera Wallet
-        const txnGroup = [{ txn, signers: [account] }];
-        const signedTxns = await peraWallet.signTransaction([txnGroup]);
-        
-        if (signedTxns && signedTxns.length > 0) {
-          return signedTxns[0];
-        } else {
-          throw new Error('Failed to sign transaction with Pera Wallet.');
-        }
-      } else if (walletType === 'lute') {
-        // Convert transaction to base64 format for Lute wallet
-        const txnBytes = algosdk.encodeUnsignedTransaction(txn);
-        const txnBase64 = btoa(String.fromCharCode(...txnBytes));
-        
-        // Sign transaction using Lute wallet
-        const signedTxns = await luteWallet.signTxns([{ txn: txnBase64 }]);
-        
-        if (signedTxns && signedTxns.length > 0) {
-          return signedTxns[0];
-        } else {
-          throw new Error('Failed to sign transaction with Lute wallet.');
-        }
-      }
-      
-      throw new Error('Unknown wallet type.');
-    } catch (error) {
-      console.error('Failed to sign transaction:', error);
-      
-      // Provide user-friendly error messages
-      if (error.message && error.message.includes('User Rejected Request')) {
-        throw new Error('Transaction signing was cancelled by user.');
-      } else if (error.message && error.message.includes('rejected')) {
-        throw new Error('Transaction signing was cancelled by user.');
-      } else if (error.message && error.message.includes('SignTxnsError')) {
-        throw new Error('Failed to sign transaction. Please check your wallet connection.');
-      } else {
-        throw error;
-      }
-    }
-  };
 
-  const signTransactionGroup = async (txns) => {
-    try {
-      if (!isConnected) {
-        throw new Error('No wallet connected. Please connect your wallet first.');
-      }
-      
       console.log('Signing transaction group with', txns.length, 'transactions');
-      
-      if (walletType === 'pera') {
-        // Sign transaction group using Pera Wallet
-        // Pera Wallet expects an array of transaction groups
-        const txnsToSign = txns.map((txn) => {
-          return { txn: txn, signers: [account] };
-        });
-        
-        console.log('Sending to Pera Wallet for signing...');
-        const signedTxns = await peraWallet.signTransaction([txnsToSign]);
-        
-        if (signedTxns && signedTxns.length > 0) {
-          console.log('Successfully signed', signedTxns.length, 'transactions');
-          return signedTxns;
-        } else {
+
+      try {
+        const peraPayload = txns.map((txn) => ({
+          txn: encodeUnsignedTxnToBase64(txn),
+          signers: [account],
+        }));
+
+        const signedGroups = await peraWallet.signTransaction([peraPayload]);
+
+        if (!signedGroups || signedGroups.length === 0) {
           throw new Error('Failed to sign transaction group with Pera Wallet.');
         }
-      } else if (walletType === 'lute') {
-        // Convert all transactions to base64 format for Lute wallet
-        const txnGroup = txns.map(txn => {
-          const txnBytes = algosdk.encodeUnsignedTransaction(txn);
-          const txnBase64 = btoa(String.fromCharCode(...txnBytes));
-          return { txn: txnBase64 };
-        });
-        
-        // Sign transaction group using Lute wallet
-        const signedTxns = await luteWallet.signTxns(txnGroup);
-        
-        if (signedTxns && signedTxns.length > 0) {
-          return signedTxns;
-        } else {
-          throw new Error('Failed to sign transaction group with Lute wallet.');
+
+        return signedGroups.flat().map(normalizeSignedTxn);
+      } catch (error) {
+        console.error('Failed to sign transaction group:', error);
+
+        if (error.message && error.message.includes('User Rejected Request')) {
+          throw new Error('Transaction signing was cancelled by user.');
         }
-      }
-      
-      throw new Error('Unknown wallet type.');
-    } catch (error) {
-      console.error('Failed to sign transaction group:', error);
-      
-      // Provide user-friendly error messages
-      if (error.message && error.message.includes('User Rejected Request')) {
-        throw new Error('Transaction signing was cancelled by user.');
-      } else if (error.message && error.message.includes('rejected')) {
-        throw new Error('Transaction signing was cancelled by user.');
-      } else if (error.message && error.message.includes('SignTxnsError')) {
-        throw new Error('Failed to sign transaction. Please check your wallet connection.');
-      } else {
+        if (error.message && error.message.includes('rejected')) {
+          throw new Error('Transaction signing was cancelled by user.');
+        }
+        if (error.message && error.message.includes('SignTxnsError')) {
+          throw new Error('Failed to sign transaction. Please check your wallet connection.');
+        }
+
         throw error;
       }
-    }
-  };
+    },
+    [account, isConnected]
+  );
+
+  const signTransaction = useCallback(
+    async (txn) => {
+      const signedGroup = await signTransactionGroup([txn]);
+      if (!signedGroup || signedGroup.length === 0) {
+        throw new Error('Wallet did not return a signed transaction.');
+      }
+      return signedGroup[0];
+    },
+    [signTransactionGroup]
+  );
 
   const getAccountInfo = async () => {
     if (!account) return null;
@@ -247,7 +389,7 @@ export const WalletProvider = ({ children }) => {
   };
 
   // Smart contract functions
-  const loadContractState = async () => {
+  const loadContractState = useCallback(async () => {
     if (!contractUtils.getAppId()) {
       console.warn('Contract app ID not set');
       return null;
@@ -265,7 +407,17 @@ export const WalletProvider = ({ children }) => {
     } finally {
       setIsLoadingContract(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadContractState();
+  }, [loadContractState]);
+
+  useEffect(() => {
+    if (isConnected) {
+      loadContractState();
+    }
+  }, [isConnected, loadContractState]);
 
   const createBounty = async (amount, deadline, taskDescription, verifierAddress) => {
     if (!account) {
@@ -397,7 +549,6 @@ export const WalletProvider = ({ children }) => {
     account,
     isConnected,
     isConnecting,
-    walletType,
     connectWallet,
     disconnectWallet,
     signTransaction,

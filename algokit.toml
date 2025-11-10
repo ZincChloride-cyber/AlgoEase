@@ -14,7 +14,7 @@ auto_approve: true
 # Contract configuration
 contracts:
   - name: algoease_contract
-    path: contracts/algoease_contract.py
+    path: projects/algoease-contracts/algoease_contract.py
     description: "Main escrow contract for bounty management"
 
 # Deployment settings

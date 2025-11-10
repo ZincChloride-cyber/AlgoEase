@@ -5,11 +5,18 @@
   "main": "index.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
-    "dev:frontend": "cd frontend && npm run dev",
+    "dev:frontend": "cd projects/algoease-frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
-    "build": "cd frontend && npm run build",
-    "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
-    "setup": "npm run install:all && npm run setup:algo"
+    "build": "cd projects/algoease-frontend && npm run build",
+    "install:all": "npm install && cd projects/algoease-frontend && npm install && cd ../../backend && npm install && cd ../projects/algoease-contracts && pip install -r requirements.txt",
+    "setup": "npm run install:all",
+    "bootstrap": "algokit project bootstrap all",
+    "localnet:start": "algokit localnet start",
+    "localnet:stop": "algokit localnet stop",
+    "localnet:status": "algokit localnet status",
+    "localnet:explorer": "algokit localnet explorer",
+    "deploy:localnet": "cd projects/algoease-contracts && algokit project deploy localnet",
+    "deploy:testnet": "cd projects/algoease-contracts && algokit project deploy testnet"
   },
   "keywords": [
     "algorand",

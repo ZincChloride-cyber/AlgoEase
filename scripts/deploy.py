@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # Add the contracts directory to the Python path
-sys.path.append(str(Path(__file__).parent / "contracts"))
+sys.path.append(str(Path(__file__).parent.parent / "projects" / "algoease-contracts"))
 
 from algokit_utils import (
     ApplicationClient,

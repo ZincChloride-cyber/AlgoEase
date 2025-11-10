@@ -20,12 +20,12 @@ const CONFIG = {
   INDEXER_TOKEN: process.env.INDEXER_TOKEN || '',
   
   // Contract files
-  APPROVAL_PROGRAM_PATH: path.join(__dirname, '../contracts/algoease_approval.teal'),
-  CLEAR_PROGRAM_PATH: path.join(__dirname, '../contracts/algoease_clear.teal'),
+  APPROVAL_PROGRAM_PATH: path.join(__dirname, '../projects/algoease-contracts/algoease_approval.teal'),
+  CLEAR_PROGRAM_PATH: path.join(__dirname, '../projects/algoease-contracts/algoease_clear.teal'),
   
   // Output files
   CONTRACT_INFO_PATH: path.join(__dirname, '../contract-info.json'),
-  FRONTEND_ENV_PATH: path.join(__dirname, '../frontend/.env.local'),
+  FRONTEND_ENV_PATH: path.join(__dirname, '../projects/algoease-frontend/.env.local'),
   
   // Network parameters
   NETWORK: 'testnet'

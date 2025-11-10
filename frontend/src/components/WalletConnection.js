@@ -1,50 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useWallet } from '../contexts/WalletContext';
 import WalletInstallGuide from './WalletInstallGuide';
 
 const WalletConnection = () => {
-  const { 
-    account, 
-    isConnected, 
+  const {
+    account,
+    isConnected,
     isConnecting,
-    walletType, 
-    connectWallet, 
+    connectWallet,
     disconnectWallet,
-    getAccountInfo 
+    getAccountInfo,
   } = useWallet();
-  
-  const [availableWallets, setAvailableWallets] = useState([]);
+
   const [accountInfo, setAccountInfo] = useState(null);
-  const [showWalletOptions, setShowWalletOptions] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
 
-  // Define available wallets
-  useEffect(() => {
-    const wallets = [
-      {
-        name: 'Pera Wallet',
-        id: 'pera',
-        icon: '🟢',
-        description: 'Official Algorand mobile wallet',
-        link: 'https://perawallet.app/'
-      },
-      {
-        name: 'Lute Wallet',
-        id: 'lute',
-        icon: '🎵',
-        description: 'Browser extension wallet',
-        link: 'https://lute.app/'
-      }
-    ];
-    
-    setAvailableWallets(wallets);
-  }, []);
-
-  // Load account info when connected
   useEffect(() => {
     if (isConnected && account) {
       loadAccountInfo();
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleConnectWallet}
+          disabled={isConnecting}
+          className="btn-primary whitespace-nowrap text-sm"
+        >
+          {isConnecting ? 'Connecting…' : 'Connect Pera Wallet'}
+        </button>
+        <button
+          onClick={() => setShowInstallGuide(true)}
+          className="btn-ghost text-xs uppercase tracking-[0.32em] text-white/60"
+        >
+          Install guide
+        </button>
+      </div>
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, account]);
 
   const loadAccountInfo = async () => {
@@ -56,15 +46,9 @@ const WalletConnection = () => {
     }
   };
 
-  const handleConnectWallet = async (walletId) => {
-    if (walletId) {
-      // Connect to specific wallet
-      await connectWallet(walletId);
-      setShowWalletOptions(false);
-    } else {
-      // Show wallet options
-      setShowWalletOptions(true);
-    }
+  const handleConnectWallet = async () => {
+    await connectWallet();
+    setShowWalletOptions(false);
   };
 
   const handleDisconnect = async () => {
@@ -79,30 +63,31 @@ const WalletConnection = () => {
 
   const formatBalance = (balance) => {
     if (!balance) return '0';
-    return (balance / 1000000).toFixed(2); // Convert from microALGO to ALGO
+    return (balance / 1000000).toFixed(2);
   };
 
   if (isConnected && account) {
     return (
-      <div className="flex items-center space-x-4">
-        <div className="text-right">
-          <div className="flex items-center space-x-2">
-            <span className="text-xs text-gray-500">
-              {walletType === 'pera' ? '🟢 Pera' : '🎵 Lute'}
-            </span>
-            <div className="text-sm font-medium text-gray-900">
-              {formatAddress(account)}
-            </div>
-          </div>
+      <div className="glass-panel flex items-center gap-4 rounded-2xl px-4 py-2 shadow-inner-glow">
+        <div className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 via-secondary-400 to-primary-600 text-sm font-semibold text-white/90 shadow-glow md:flex">
+          PW
+        </div>
+        <div className="flex flex-col text-left">
+          <span className="text-[11px] uppercase tracking-[0.32em] text-white/40">
+            Pera Wallet
+          </span>
+          <span className="text-sm font-semibold text-white">
+            {formatAddress(account)}
+          </span>
           {accountInfo && (
-            <div className="text-xs text-gray-500">
+            <span className="text-xs text-white/60">
               {formatBalance(accountInfo.amount)} ALGO
-            </div>
+            </span>
           )}
         </div>
         <button
           onClick={handleDisconnect}
-          className="btn-outline text-sm"
+          className="btn-outline text-xs"
         >
           Disconnect
         </button>
@@ -110,91 +95,24 @@ const WalletConnection = () => {
     );
   }
 
-  if (showWalletOptions) {
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-          <h3 className="text-lg font-semibold mb-2">Connect Wallet</h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Choose your preferred wallet to connect
-          </p>
-          <div className="space-y-3">
-            {availableWallets.map((wallet) => (
-              <button
-                key={wallet.id}
-                onClick={() => handleConnectWallet(wallet.id)}
-                disabled={isConnecting}
-                className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 text-left transition-all disabled:opacity-50"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <span className="text-3xl">{wallet.icon}</span>
-                    <div>
-                      <div className="font-semibold text-gray-900">{wallet.name}</div>
-                      <div className="text-sm text-gray-500">{wallet.description}</div>
-                    </div>
-                  </div>
-                  <svg 
-                    className="w-6 h-6 text-gray-400" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24"
-                  >
-                    <path 
-                      strokeLinecap="round" 
-                      strokeLinejoin="round" 
-                      strokeWidth={2} 
-                      d="M9 5l7 7-7 7" 
-                    />
-                  </svg>
-                </div>
-              </button>
-            ))}
-          </div>
-          
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <p className="text-sm text-blue-900 font-medium mb-2">
-              Don't have a wallet?
-            </p>
-            <div className="space-y-1">
-              {availableWallets.map((wallet) => (
-                <a
-                  key={wallet.id}
-                  href={wallet.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:text-blue-800 block"
-                >
-                  Get {wallet.name} →
-                </a>
-              ))}
-            </div>
-          </div>
-          
-          <button
-            onClick={() => setShowWalletOptions(false)}
-            className="mt-4 w-full btn-outline"
-            disabled={isConnecting}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center gap-3">
         <button
-          onClick={() => handleConnectWallet()}
+          onClick={handleConnectWallet}
           disabled={isConnecting}
-          className="btn-primary"
+          className="btn-primary whitespace-nowrap text-sm"
         >
-          {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+          {isConnecting ? 'Connecting…' : 'Connect Pera Wallet'}
+        </button>
+        <button
+          onClick={() => setShowInstallGuide(true)}
+          className="btn-ghost text-xs uppercase tracking-[0.32em] text-white/60"
+        >
+          Install guide
         </button>
       </div>
-      
+
       {showInstallGuide && (
         <WalletInstallGuide onClose={() => setShowInstallGuide(false)} />
       )}
