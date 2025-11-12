@@ -34,17 +34,29 @@ const decodeStateKey = (key) => Buffer.from(key, 'base64').toString('utf8');
 
 const decodeBytesValue = (key, value) => {
   if (!value) return null;
-  const bytes = Buffer.from(value, 'base64');
+  
+  try {
+    const bytes = Buffer.from(value, 'base64');
 
-  if (ADDRESS_KEYS.has(key) && bytes.length === 32) {
-    return algosdk.encodeAddress(new Uint8Array(bytes));
+    // Handle address keys
+    if (ADDRESS_KEYS.has(key) && bytes.length === 32) {
+      return algosdk.encodeAddress(new Uint8Array(bytes));
+    }
+
+    // Decode as UTF-8 string
+    if (textDecoder) {
+      const decoded = textDecoder.decode(bytes);
+      // Ensure it's a string and trim whitespace
+      return typeof decoded === 'string' ? decoded.trim() : String(decoded).trim();
+    }
+
+    // Fallback to Buffer toString
+    const decoded = bytes.toString('utf8');
+    return typeof decoded === 'string' ? decoded.trim() : String(decoded).trim();
+  } catch (error) {
+    console.error('Error decoding bytes value:', error);
+    return null;
   }
-
-  if (textDecoder) {
-    return textDecoder.decode(bytes);
-  }
-
-  return bytes.toString();
 };
 
 const normalizeSignedPayload = (payload) => {
@@ -188,12 +200,15 @@ class ContractUtils {
   // Create bounty on smart contract
   async createBounty(sender, amount, deadline, taskDescription, verifierAddress) {
     try {
-      // Validate and ensure verifierAddress is set
-      if (!verifierAddress || verifierAddress.trim() === '') {
-        verifierAddress = sender; // Use sender as verifier if not specified
+      // Validate verifier address
+      const trimmedVerifier = verifierAddress ? verifierAddress.trim() : '';
+      const finalVerifier = trimmedVerifier || sender;
+
+      if (!algosdk.isValidAddress(finalVerifier)) {
+        throw new Error('Verifier address is not a valid Algorand address.');
       }
-      
-      console.log('Creating bounty with verifier:', verifierAddress);
+
+      console.log('Creating bounty with verifier:', finalVerifier, '(sender:', sender, ')');
       
       // Convert deadline to timestamp
       const deadlineTimestamp = Math.floor(new Date(deadline).getTime() / 1000);
@@ -215,39 +230,55 @@ class ContractUtils {
       // Convert amount to microALGO
       const amountMicroAlgo = Math.round(amount * 1000000);
 
+      // Reuse suggested params for the group to maintain identical fee/rounds
+      const suggestedParams = await this.getSuggestedParams();
+
       // Create payment transaction to send funds to contract (must be first)
-      const paymentTxn = await this.createPaymentTransaction(
-        sender,
-        await this.getContractAddress(),
-        amount, // Amount in ALGO (function will convert to microALGO)
-        'AlgoEase: Bounty Payment'
-      );
+      const contractAddress = await this.getContractAddress();
+      const paymentTxn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+        from: sender,
+        to: contractAddress,
+        amount: amountMicroAlgo,
+        suggestedParams,
+        note: new Uint8Array(new TextEncoder().encode('AlgoEase: Bounty Payment'))
+      });
 
       // Create the application call transaction (must be second)
-      // IMPORTANT: accounts array must not be empty - pass verifierAddress
+      // Contract REQUIRES at least 1 account in the accounts array (txn NumAccounts >= 1)
+      // ALWAYS pass the verifier, even if it's the same as the sender
+      const foreignAccounts = [finalVerifier];
+
+      console.log('Creating bounty transaction with:', {
+        sender,
+        contractAddress,
+        finalVerifier,
+        isSenderVerifier: finalVerifier === sender,
+        foreignAccounts,
+        amountMicroAlgo,
+        paymentAmount: paymentTxn.amount,
+        deadlineTimestamp,
+        taskDescriptionLength: taskDescription.length
+      });
+
       const appCallTxn = await this.createAppCallTransaction(
         sender,
         CONTRACT_METHODS.CREATE_BOUNTY,
         [amountMicroAlgo, deadlineTimestamp, taskDescription],
-        [verifierAddress],  // This makes Txn.accounts.length() = 2 (sender + verifier)
+        foreignAccounts,
         'AlgoEase: Create Bounty'
       );
 
       console.debug('createBounty: built transactions', {
-        paymentTxnType: paymentTxn?.constructor?.name,
-        appCallTxnType: appCallTxn?.constructor?.name,
-        paymentTxnKeys: paymentTxn ? Object.keys(paymentTxn).slice(0, 10) : null,
-        appCallTxnKeys: appCallTxn ? Object.keys(appCallTxn).slice(0, 10) : null,
+        paymentTxnAmount: paymentTxn.amount,
+        paymentTxnReceiver: paymentTxn.to,
+        appCallTxnAccounts: appCallTxn.appAccounts || [],
+        appCallTxnArgs: appCallTxn.appArgs?.length || 0,
       });
 
-      // Assign group ID to transactions and return grouped instances
-      const groupedTxns = algosdk.assignGroupID([paymentTxn, appCallTxn]);
+      // Assign group ID to transactions (mutates in place)
+      algosdk.assignGroupID([paymentTxn, appCallTxn]);
 
-      // Fallback to original references if assignGroupID mutates in-place
-      if (Array.isArray(groupedTxns) && groupedTxns.length === 2) {
-        return groupedTxns;
-      }
-
+      // Return the transactions - they are already proper Transaction instances
       return [paymentTxn, appCallTxn];
     } catch (error) {
       console.error('Failed to create bounty transaction:', error);
@@ -404,15 +435,24 @@ class ContractUtils {
       const deadlineSeconds = state[GLOBAL_STATE_KEYS.DEADLINE];
       const deadlineDate = deadlineSeconds ? new Date(deadlineSeconds * 1000) : null;
 
+      // Ensure task description is a string
+      const taskDesc = state[GLOBAL_STATE_KEYS.TASK_DESCRIPTION];
+      const taskDescription = taskDesc ? String(taskDesc).trim() : '';
+
+      // Ensure addresses are strings
+      const clientAddress = state[GLOBAL_STATE_KEYS.CLIENT_ADDR] ? String(state[GLOBAL_STATE_KEYS.CLIENT_ADDR]) : null;
+      const freelancerAddress = state[GLOBAL_STATE_KEYS.FREELANCER_ADDR] ? String(state[GLOBAL_STATE_KEYS.FREELANCER_ADDR]) : null;
+      const verifierAddress = state[GLOBAL_STATE_KEYS.VERIFIER_ADDR] ? String(state[GLOBAL_STATE_KEYS.VERIFIER_ADDR]) : null;
+
       return {
         bountyCount: state[GLOBAL_STATE_KEYS.BOUNTY_COUNT],
-        clientAddress: state[GLOBAL_STATE_KEYS.CLIENT_ADDR],
-        freelancerAddress: state[GLOBAL_STATE_KEYS.FREELANCER_ADDR],
+        clientAddress,
+        freelancerAddress,
         amount: amountMicro / 1000000, // Convert from microALGO to ALGO
         deadline: deadlineDate || new Date(),
         status: state[GLOBAL_STATE_KEYS.STATUS] ?? BOUNTY_STATUS.OPEN,
-        taskDescription: state[GLOBAL_STATE_KEYS.TASK_DESCRIPTION] || '',
-        verifierAddress: state[GLOBAL_STATE_KEYS.VERIFIER_ADDR]
+        taskDescription,
+        verifierAddress
       };
     } catch (error) {
       console.error('Failed to get current bounty:', error);
@@ -468,13 +508,22 @@ class ContractUtils {
   }
 
   // Wait for transaction confirmation
-  async waitForConfirmation(txId, timeout = 10000) {
+  async waitForConfirmation(txId, timeout = 4) {
     try {
+      // Extract the transaction ID if it's an object
+      const txIdString = typeof txId === 'object' && txId.txId ? txId.txId : txId;
+      
+      console.log('Waiting for confirmation of transaction:', txIdString);
+      
+      // The timeout parameter is in rounds, not milliseconds
+      // Each round is ~3.7 seconds on Algorand
       const confirmedTxn = await algosdk.waitForConfirmation(
         this.algodClient,
-        txId,
+        txIdString,
         timeout
       );
+      
+      console.log('Transaction confirmed in round:', confirmedTxn['confirmed-round']);
       return confirmedTxn;
     } catch (error) {
       console.error('Transaction confirmation failed:', error);
@@ -486,7 +535,14 @@ class ContractUtils {
   async submitTransaction(signedTxn) {
     try {
       const payload = normalizeSignedPayload(signedTxn);
-      const txId = await this.algodClient.sendRawTransaction(payload).do();
+      
+      console.log('Submitting transaction to network...');
+      const response = await this.algodClient.sendRawTransaction(payload).do();
+      
+      // Extract the transaction ID from the response
+      const txId = response.txId || response;
+      console.log('Transaction submitted successfully. TxID:', txId);
+      
       return txId;
     } catch (error) {
       console.error('Failed to submit transaction:', error);
@@ -501,7 +557,13 @@ class ContractUtils {
         ? signedTxns.map((txn) => normalizeSignedPayload(txn))
         : normalizeSignedPayload(signedTxns);
 
-      const txId = await this.algodClient.sendRawTransaction(payload).do();
+      console.log('Submitting transaction group to network...');
+      const response = await this.algodClient.sendRawTransaction(payload).do();
+      
+      // Extract the transaction ID from the response
+      const txId = response.txId || response;
+      console.log('Transaction submitted successfully. TxID:', txId);
+      
       return txId;
     } catch (error) {
       console.error('Failed to submit transaction group:', error);

@@ -24,52 +24,65 @@ const BountyList = () => {
   const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    const loadBounties = async () => {
+    let isMounted = true;
+
+    const fetchContractState = async () => {
       try {
         setLoading(true);
         await loadContractState();
-
-        if (contractState) {
-          const status =
-            contractState.status === 0
-              ? 'open'
-              : contractState.status === 1
-              ? 'accepted'
-              : contractState.status === 2
-              ? 'approved'
-              : contractState.status === 3
-              ? 'claimed'
-              : 'refunded';
-
-          const bountyData = {
-            id: contractState.bountyCount,
-            title: contractState.taskDescription
-              ? contractState.taskDescription.slice(0, 40) + (contractState.taskDescription.length > 40 ? '…' : '')
-              : 'Smart Contract Bounty',
-            description: contractState.taskDescription || 'Unlock escrow automation with Algorand smart contracts.',
-            amount: contractState.amount,
-            deadline: contractState.deadline,
-            status,
-            client: contractState.clientAddress,
-            freelancer: contractState.freelancerAddress,
-            verifier: contractState.verifierAddress,
-            createdAt: new Date().toISOString(),
-          };
-
-          setBounties([bountyData]);
-        } else {
-          setBounties([]);
-        }
       } catch (error) {
         console.error('Error loading bounties:', error);
-        setBounties([]);
+        if (isMounted) {
+          setBounties([]);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
-    loadBounties();
-  }, [contractState, loadContractState]);
+    fetchContractState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [loadContractState]);
+
+  useEffect(() => {
+    if (!contractState) {
+      setBounties([]);
+      return;
+    }
+
+    const status =
+      contractState.status === 0
+        ? 'open'
+        : contractState.status === 1
+        ? 'accepted'
+        : contractState.status === 2
+        ? 'approved'
+        : contractState.status === 3
+        ? 'claimed'
+        : 'refunded';
+
+    const bountyData = {
+      id: contractState.bountyCount,
+      title: contractState.taskDescription
+        ? contractState.taskDescription.slice(0, 40) + (contractState.taskDescription.length > 40 ? '…' : '')
+        : 'Smart Contract Bounty',
+      description: contractState.taskDescription || 'Unlock escrow automation with Algorand smart contracts.',
+      amount: contractState.amount,
+      deadline: contractState.deadline,
+      status,
+      client: contractState.clientAddress,
+      freelancer: contractState.freelancerAddress,
+      verifier: contractState.verifierAddress,
+      createdAt: new Date().toISOString(),
+    };
+
+    setBounties([bountyData]);
+  }, [contractState]);
 
   const filteredBounties = useMemo(() => {
     if (filter === 'all') return bounties;

@@ -30,45 +30,59 @@ const BountyDetail = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+
     const loadBountyData = async () => {
       try {
         setLoading(true);
         await loadContractState();
-        if (contractState) {
-          const status = contractUtils.getStatusName(contractState.status);
-          setBounty({
-            id: contractState.bountyCount,
-            title: contractState.taskDescription
-              ? contractState.taskDescription.slice(0, 42) + (contractState.taskDescription.length > 42 ? '…' : '')
-              : 'Smart Contract Bounty',
-            description: contractState.taskDescription || 'This bounty is powered by Algorand smart contracts.',
-            amount: contractState.amount,
-            deadline: contractState.deadline,
-            status,
-            client: contractState.clientAddress,
-            freelancer: contractState.freelancerAddress,
-            verifier: contractState.verifierAddress,
-            createdAt: new Date().toISOString(),
-            requirements: [
-              'Deliver work matching the description and milestones.',
-              'Submit artefacts or repository links for review.',
-              'Respect deadline blocks; refunds trigger automatically after expiry.',
-            ],
-            submissions: [],
-          });
-        } else {
-          setBounty(null);
-        }
       } catch (error) {
         console.error('Failed to load bounty data:', error);
-        setBounty(null);
+        if (isMounted) {
+          setBounty(null);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     loadBountyData();
-  }, [id, contractState, loadContractState]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, loadContractState]);
+
+  useEffect(() => {
+    if (!contractState) {
+      setBounty(null);
+      return;
+    }
+
+    const status = contractUtils.getStatusName(contractState.status);
+    setBounty({
+      id: contractState.bountyCount,
+      title: contractState.taskDescription
+        ? contractState.taskDescription.slice(0, 42) + (contractState.taskDescription.length > 42 ? '…' : '')
+        : 'Smart Contract Bounty',
+      description: contractState.taskDescription || 'This bounty is powered by Algorand smart contracts.',
+      amount: contractState.amount,
+      deadline: contractState.deadline,
+      status,
+      client: contractState.clientAddress,
+      freelancer: contractState.freelancerAddress,
+      verifier: contractState.verifierAddress,
+      createdAt: new Date().toISOString(),
+      requirements: [
+        'Deliver work matching the description and milestones.',
+        'Submit artefacts or repository links for review.',
+        'Respect deadline blocks; refunds trigger automatically after expiry.',
+      ],
+      submissions: [],
+    });
+  }, [contractState]);
 
   const actions = useMemo(() => {
     if (!bounty) return [];

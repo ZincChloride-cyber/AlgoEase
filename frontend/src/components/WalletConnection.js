@@ -18,21 +18,6 @@ const WalletConnection = () => {
   useEffect(() => {
     if (isConnected && account) {
       loadAccountInfo();
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleConnectWallet}
-          disabled={isConnecting}
-          className="btn-primary whitespace-nowrap text-sm"
-        >
-          {isConnecting ? 'Connecting…' : 'Connect Pera Wallet'}
-        </button>
-        <button
-          onClick={() => setShowInstallGuide(true)}
-          className="btn-ghost text-xs uppercase tracking-[0.32em] text-white/60"
-        >
-          Install guide
-        </button>
-      </div>
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, account]);
@@ -48,7 +33,7 @@ const WalletConnection = () => {
 
   const handleConnectWallet = async () => {
     await connectWallet();
-    setShowWalletOptions(false);
+    setShowInstallGuide(false);
   };
 
   const handleDisconnect = async () => {

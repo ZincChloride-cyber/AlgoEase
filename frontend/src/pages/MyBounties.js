@@ -42,62 +42,105 @@ const MyBounties = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    const loadUserBounties = async () => {
-      if (!isConnected || !account) {
-        setLoading(false);
-        return;
-      }
+    if (!isConnected || !account) {
+      setLoading(false);
+      setBounties({ created: [], accepted: [] });
+      setError('');
+      return;
+    }
 
+    let isMounted = true;
+
+    const loadUserBounties = async () => {
       try {
         setLoading(true);
         setError('');
         await loadContractState();
-
-        if (contractState) {
-          const status =
-            contractState.status === 0
-              ? 'open'
-              : contractState.status === 1
-              ? 'accepted'
-              : contractState.status === 2
-              ? 'approved'
-              : contractState.status === 3
-              ? 'claimed'
-              : 'refunded';
-
-          const bountyData = {
-            id: contractState.bountyCount,
-            title: contractState.taskDescription
-              ? contractState.taskDescription.slice(0, 42) + (contractState.taskDescription.length > 42 ? '…' : '')
-              : 'Smart Contract Bounty',
-            description: contractState.taskDescription || 'Automated escrow flow powered by Algorand smart contracts.',
-            amount: contractState.amount,
-            deadline: contractState.deadline,
-            status,
-            client: contractState.clientAddress,
-            freelancer: contractState.freelancerAddress,
-            verifier: contractState.verifierAddress,
-            createdAt: new Date().toISOString(),
-          };
-
-          const created = account === contractState.clientAddress ? [bountyData] : [];
-          const accepted = account === contractState.freelancerAddress ? [bountyData] : [];
-
-          setBounties({ created, accepted });
-        } else {
-          setBounties({ created: [], accepted: [] });
-        }
       } catch (err) {
         console.error('Error loading user bounties:', err);
-        setError('Failed to load your bounties. Please try again.');
-        setBounties({ created: [], accepted: [] });
+        if (isMounted) {
+          setError('Failed to load your bounties. Please try again.');
+          setBounties({ created: [], accepted: [] });
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     loadUserBounties();
-  }, [isConnected, account, contractState, loadContractState]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isConnected, account, loadContractState]);
+
+  useEffect(() => {
+    console.log('=== MyBounties useEffect START ===');
+    console.log('isConnected:', isConnected);
+    console.log('account:', account);
+    console.log('contractState:', contractState);
+    console.log('=====================================');
+
+    if (!isConnected || !account) {
+      console.log('Not connected or no account, returning early');
+      return;
+    }
+
+    if (!contractState) {
+      console.log('No contractState, setting empty bounties');
+      setBounties({ created: [], accepted: [] });
+      return;
+    }
+
+    // Skip refunded or claimed bounties
+    if (contractState.status === 3 || contractState.status === 4) {
+      console.log('Skipping bounty with status:', contractState.status, '(claimed or refunded)');
+      setBounties({ created: [], accepted: [] });
+      return;
+    }
+
+    const status =
+      contractState.status === 0
+        ? 'open'
+        : contractState.status === 1
+        ? 'accepted'
+        : contractState.status === 2
+        ? 'approved'
+        : contractState.status === 3
+        ? 'claimed'
+        : 'refunded';
+
+    const bountyData = {
+      id: contractState.bountyCount,
+      title: contractState.taskDescription
+        ? contractState.taskDescription.slice(0, 42) + (contractState.taskDescription.length > 42 ? '…' : '')
+        : 'Smart Contract Bounty',
+      description: contractState.taskDescription || 'Automated escrow flow powered by Algorand smart contracts.',
+      amount: contractState.amount,
+      deadline: contractState.deadline,
+      status,
+      client: contractState.clientAddress,
+      freelancer: contractState.freelancerAddress,
+      verifier: contractState.verifierAddress,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Debug logging
+    console.log('=== MyBounties Address Comparison Debug ===');
+    console.log('Wallet account:', account);
+    console.log('Contract clientAddress:', contractState.clientAddress);
+    console.log('Contract freelancerAddress:', contractState.freelancerAddress);
+    console.log('Bounty status:', contractState.status, '(' + status + ')');
+    console.log('Are they equal?', account === contractState.clientAddress);
+    console.log('===========================================');
+
+    const created = account === contractState.clientAddress ? [bountyData] : [];
+    const accepted = account === contractState.freelancerAddress ? [bountyData] : [];
+
+    setBounties({ created, accepted });
+  }, [contractState, isConnected, account]);
 
   const formatDate = (value) =>
     new Date(value).toLocaleDateString('en-US', {

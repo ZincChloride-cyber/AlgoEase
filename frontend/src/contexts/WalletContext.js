@@ -2,207 +2,13 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import algosdk from 'algosdk/dist/browser/algosdk.min.js';
 import { PeraWalletConnect } from '@perawallet/connect';
 import { Buffer } from 'buffer';
-import contractUtils from '../utils/contractUtils';
+import contractUtils, { BOUNTY_STATUS } from '../utils/contractUtils';
 
 if (typeof window !== 'undefined' && !window.Buffer) {
   window.Buffer = Buffer;
 }
 
 const WalletContext = createContext();
-
-const ADDRESS_REGEX = /^[A-Z2-7]{58}$/;
-
-const toBytes = (value) => {
-  if (!value) return undefined;
-
-  if (value.type === 'Buffer' && Array.isArray(value.data)) {
-    return new Uint8Array(value.data);
-  }
-
-  if (Array.isArray(value)) {
-    return Uint8Array.from(value);
-  }
-
-  if (value instanceof Uint8Array) {
-    return value;
-  }
-
-  if (typeof value === 'object' && value.buffer instanceof ArrayBuffer) {
-    return new Uint8Array(value.buffer);
-  }
-
-  if (typeof value === 'string') {
-    if (ADDRESS_REGEX.test(value)) {
-      try {
-        return algosdk.decodeAddress(value).publicKey;
-      } catch (err) {
-        console.warn('[wallet] Failed to decode address string:', err);
-      }
-    }
-
-    try {
-      return Uint8Array.from(Buffer.from(value, 'base64'));
-    } catch (err) {
-      console.warn('[wallet] Failed to decode base64 string:', err);
-    }
-  }
-
-  return value;
-};
-
-const instantiateTxnIfPossible = (txnLike) => {
-  if (!txnLike || typeof txnLike !== 'object') {
-    return null;
-  }
-
-  if (typeof txnLike.get_obj_for_encoding === 'function') {
-    return txnLike;
-  }
-
-  if (typeof algosdk.Transaction === 'function') {
-    try {
-      return new algosdk.Transaction(txnLike);
-    } catch (err) {
-      console.warn('[wallet] Failed to instantiate transaction via Transaction constructor:', err);
-    }
-  }
-
-  return null;
-};
-
-const buildEncodingObject = (txnLike) => {
-  if (!txnLike || typeof txnLike !== 'object') {
-    throw new Error('Invalid transaction payload received from wallet.');
-  }
-
-  if (typeof txnLike.get_obj_for_encoding === 'function') {
-    return txnLike.get_obj_for_encoding();
-  }
-
-  const obj = {};
-
-  const type =
-    txnLike.type ||
-    (txnLike.tag ? Buffer.from(toBytes(txnLike.tag) || []).toString() : undefined);
-
-  if (!type) {
-    throw new Error('Transaction type missing from wallet payload.');
-  }
-
-  obj.type = type;
-
-  const snd = toBytes(txnLike.snd || txnLike.from?.publicKey);
-  if (snd) obj.snd = snd;
-
-  const rcv = toBytes(txnLike.rcv || txnLike.to?.publicKey);
-  if (rcv) obj.rcv = rcv;
-
-  const fee = txnLike.fee ?? txnLike.fee ?? txnLike.fe;
-  if (fee !== undefined) obj.fee = fee;
-
-  const fv = txnLike.fv ?? txnLike.firstRound;
-  if (fv !== undefined) obj.fv = fv;
-
-  const lv = txnLike.lv ?? txnLike.lastRound;
-  if (lv !== undefined) obj.lv = lv;
-
-  const gh = toBytes(txnLike.gh || txnLike.genesisHash);
-  if (gh) obj.gh = gh;
-
-  const gen = txnLike.gen || txnLike.genesisID;
-  if (gen) obj.gen = gen;
-
-  const grp = toBytes(txnLike.grp || txnLike.group);
-  if (grp && grp.length > 0) obj.grp = grp;
-
-  const lx = toBytes(txnLike.lx || txnLike.lease);
-  if (lx && lx.length > 0) obj.lx = lx;
-
-  const note = toBytes(txnLike.note);
-  if (note && note.length > 0) obj.note = note;
-
-  const amt = txnLike.amt ?? txnLike.amount;
-  if (amt !== undefined) obj.amt = amt;
-
-  if (Array.isArray(txnLike.appArgs)) {
-    obj.apaa = txnLike.appArgs.map(toBytes);
-  } else if (Array.isArray(txnLike.apaa)) {
-    obj.apaa = txnLike.apaa.map(toBytes);
-  }
-
-  if (Array.isArray(txnLike.appAccounts)) {
-    obj.apat = txnLike.appAccounts.map((account) => {
-      if (account?.publicKey) {
-        return toBytes(account.publicKey);
-      }
-      if (typeof account === 'string') {
-        return toBytes(account);
-      }
-      return toBytes(account);
-    });
-  } else if (Array.isArray(txnLike.apat)) {
-    obj.apat = txnLike.apat.map(toBytes);
-  }
-
-  if (txnLike.appIndex !== undefined) {
-    obj.apid = txnLike.appIndex;
-  } else if (txnLike.apid !== undefined) {
-    obj.apid = txnLike.apid;
-  }
-
-  if (txnLike.appOnComplete !== undefined) {
-    obj.apan = txnLike.appOnComplete;
-  } else if (txnLike.apan !== undefined) {
-    obj.apan = txnLike.apan;
-  }
-
-  return obj;
-};
-
-const encodeUnsignedTxnToBase64 = (txn) => {
-  if (!txn) {
-    throw new Error('Attempted to encode an empty transaction.');
-  }
-
-  const instantiatedTxn = instantiateTxnIfPossible(txn);
-
-  console.log('[wallet] encodeUnsignedTxnToBase64: received payload', {
-    type: typeof txn,
-    isArray: Array.isArray(txn),
-    hasTxn: txn && typeof txn === 'object' && ('txn' in txn || '_txn' in txn || 'transaction' in txn),
-    keys: txn && typeof txn === 'object' ? Object.keys(txn) : null,
-    sample: txn && typeof txn === 'object' ? JSON.parse(JSON.stringify(txn, (_, value) => (typeof value === 'bigint' ? Number(value) : value))) : txn,
-  });
-
-  try {
-    if (txn instanceof Uint8Array) {
-      return Buffer.from(txn).toString('base64');
-    }
-
-    if (instantiatedTxn) {
-      const txnBytes = algosdk.encodeUnsignedTransaction(instantiatedTxn);
-      return Buffer.from(txnBytes).toString('base64');
-    }
-
-    if (typeof txn === 'string') {
-      return txn;
-    }
-
-    const encodingObject = buildEncodingObject(txn);
-
-    console.debug('[wallet] encodeUnsignedTxnToBase64: encoding object', {
-      keys: Object.keys(encodingObject),
-    });
-
-    const txnBytes = algosdk.encodeObj(encodingObject);
-    return Buffer.from(txnBytes).toString('base64');
-  } catch (error) {
-    console.error('[wallet] encodeUnsignedTxnToBase64: failed to encode transaction', {
-      error,
-    });
-    throw error;
-  }
-};
 
 const normalizeSignedTxn = (signedTxn) => {
   if (!signedTxn) {
@@ -232,8 +38,18 @@ const normalizeSignedTxn = (signedTxn) => {
   throw new Error('Unsupported signed transaction format returned by wallet.');
 };
 
+// Detect if user is on mobile or desktop
+const isMobile = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
+// Initialize Pera Wallet Connect with optimized settings
+// Force web wallet for desktop users
 const peraWallet = new PeraWalletConnect({
-  chainId: 416002, // TestNet chain ID (416001 for MainNet)
+  shouldShowSignTxnToast: true,
+  chainId: 416002, // TestNet
+  // Enable web wallet for desktop browsers
+  compactMode: false
 });
 
 export const useWallet = () => {
@@ -250,6 +66,7 @@ export const WalletProvider = ({ children }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [contractState, setContractState] = useState(null);
   const [isLoadingContract, setIsLoadingContract] = useState(false);
+  const [pendingTransaction, setPendingTransaction] = useState(false);
 
   // Algorand TestNet configuration
   const algodClient = new algosdk.Algodv2(
@@ -267,6 +84,8 @@ export const WalletProvider = ({ children }) => {
         if (accounts.length > 0) {
           setAccount(accounts[0]);
           setIsConnected(true);
+          // Clear any stuck pending state on reconnection
+          setPendingTransaction(false);
           console.log('Pera Wallet reconnected:', accounts[0]);
         }
       })
@@ -286,6 +105,8 @@ export const WalletProvider = ({ children }) => {
       if (accounts && accounts.length > 0) {
         setAccount(accounts[0]);
         setIsConnected(true);
+        // Clear any stuck pending state on new connection
+        setPendingTransaction(false);
         console.log('✅ Pera Wallet connected successfully:', accounts[0]);
         
         peraWallet.connector?.on('disconnect', () => {
@@ -327,32 +148,97 @@ export const WalletProvider = ({ children }) => {
 
   const signTransactionGroup = useCallback(
     async (txns) => {
-      if (!isConnected) {
+      if (!isConnected || !account) {
         throw new Error('No wallet connected. Please connect your wallet first.');
+      }
+
+      // Check if there's already a pending transaction
+      if (pendingTransaction) {
+        throw new Error('A transaction is already in progress. Please complete or cancel it first.');
       }
 
       console.log('Signing transaction group with', txns.length, 'transactions');
 
       try {
-        const peraPayload = txns.map((txn) => ({
-          txn: encodeUnsignedTxnToBase64(txn),
-          signers: [account],
-        }));
+        setPendingTransaction(true);
+        
+        // Add a small delay to ensure any previous transaction is fully cleared
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Log detailed transaction info for debugging
+        console.log('🔍 Transaction Details:');
+        txns.forEach((txn, idx) => {
+          console.log(`  Transaction ${idx}:`, {
+            type: txn.constructor.name,
+            from: txn.from ? algosdk.encodeAddress(txn.from.publicKey) : 'unknown',
+            hasGroup: !!txn.group,
+            fee: txn.fee
+          });
+        });
+        
+        // Pera Wallet expects transactions in a specific format
+        // Each transaction needs to be properly formatted for signing
+        const txnGroup = txns.map((txn) => {
+          // Verify the transaction is valid
+          if (!txn) {
+            console.error('Invalid transaction: transaction is null or undefined');
+            throw new Error('Invalid transaction - transaction is null');
+          }
 
-        const signedGroups = await peraWallet.signTransaction([peraPayload]);
+          // Return transaction in Pera Wallet format
+          // The txn should be the raw Transaction object
+          return {
+            txn: txn,
+            // Optional: specify signers if different from txn.from
+            // signers: [account]
+          };
+        });
 
-        if (!signedGroups || signedGroups.length === 0) {
+        console.log('📤 Prepared transaction group for signing:', {
+          count: txnGroup.length,
+          groupSize: txns[0]?.group ? 'Grouped' : 'Individual',
+          hasValidTransactions: txnGroup.every(t => t.txn && typeof t.txn.toByte === 'function')
+        });
+
+        console.log('🔗 Opening Pera Wallet for signing...');
+        console.log('💡 If Pera Wallet doesn\'t open:');
+        console.log('   - On Desktop: Use Pera Wallet web (web.perawallet.app)');
+        console.log('   - On Mobile: Make sure Pera Wallet app is installed');
+        console.log('   - Check browser console for errors');
+
+        // Sign the transaction group using Pera Wallet
+        // IMPORTANT: Pera Wallet expects an array of transaction groups
+        // Pass the transactions wrapped in an array
+        const signedTxns = await peraWallet.signTransaction([txnGroup]);
+
+        console.log('✅ Received signed transactions:', {
+          count: signedTxns?.length,
+          isArray: Array.isArray(signedTxns),
+          type: typeof signedTxns
+        });
+
+        if (!signedTxns || signedTxns.length === 0) {
           throw new Error('Failed to sign transaction group with Pera Wallet.');
         }
 
-        return signedGroups.flat().map(normalizeSignedTxn);
+        // Flatten and normalize the signed transactions
+        return signedTxns.flat().map(normalizeSignedTxn);
       } catch (error) {
         console.error('Failed to sign transaction group:', error);
 
+        // Handle specific error codes
+        if (error.code === 4100 || (error.message && error.message.includes('4100'))) {
+          // Force clear the pending state since this is a wallet-side issue
+          setPendingTransaction(false);
+          throw new Error('Another transaction is pending in Pera Wallet. Please complete or reject it in your wallet app, then try again.');
+        }
         if (error.message && error.message.includes('User Rejected Request')) {
           throw new Error('Transaction signing was cancelled by user.');
         }
         if (error.message && error.message.includes('rejected')) {
+          throw new Error('Transaction signing was cancelled by user.');
+        }
+        if (error.message && error.message.includes('cancelled')) {
           throw new Error('Transaction signing was cancelled by user.');
         }
         if (error.message && error.message.includes('SignTxnsError')) {
@@ -360,20 +246,84 @@ export const WalletProvider = ({ children }) => {
         }
 
         throw error;
+      } finally {
+        // Always clear pending state after a shorter delay
+        setTimeout(() => {
+          setPendingTransaction(false);
+        }, 500);
       }
     },
-    [account, isConnected]
+    [account, isConnected, pendingTransaction]
   );
 
   const signTransaction = useCallback(
     async (txn) => {
-      const signedGroup = await signTransactionGroup([txn]);
-      if (!signedGroup || signedGroup.length === 0) {
-        throw new Error('Wallet did not return a signed transaction.');
+      if (!isConnected || !account) {
+        throw new Error('No wallet connected. Please connect your wallet first.');
       }
-      return signedGroup[0];
+
+      // Check if there's already a pending transaction
+      if (pendingTransaction) {
+        throw new Error('A transaction is already in progress. Please complete or cancel it first.');
+      }
+
+      try {
+        setPendingTransaction(true);
+        
+        // Add a small delay to ensure any previous transaction is fully cleared
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Verify the transaction has the required methods
+        if (!txn || typeof txn.toByte !== 'function') {
+          console.error('Invalid transaction object:', txn);
+          throw new Error('Invalid transaction format - missing toByte method');
+        }
+
+        // Format for Pera Wallet
+        const txnToSign = [{
+          txn: txn,  // Pass the raw Transaction object
+          signers: [account]  // Specify which account should sign
+        }];
+
+        // Sign single transaction using Pera Wallet
+        const signedTxns = await peraWallet.signTransaction([txnToSign]);
+
+        if (!signedTxns || signedTxns.length === 0 || signedTxns[0].length === 0) {
+          throw new Error('Wallet did not return a signed transaction.');
+        }
+
+        return normalizeSignedTxn(signedTxns[0][0]);
+      } catch (error) {
+        console.error('Failed to sign transaction:', error);
+
+        // Handle specific error codes
+        if (error.code === 4100 || (error.message && error.message.includes('4100'))) {
+          // Force clear the pending state since this is a wallet-side issue
+          setPendingTransaction(false);
+          throw new Error('Another transaction is pending in Pera Wallet. Please complete or reject it in your wallet app, then try again.');
+        }
+        if (error.message && error.message.includes('User Rejected Request')) {
+          throw new Error('Transaction signing was cancelled by user.');
+        }
+        if (error.message && error.message.includes('rejected')) {
+          throw new Error('Transaction signing was cancelled by user.');
+        }
+        if (error.message && error.message.includes('cancelled')) {
+          throw new Error('Transaction signing was cancelled by user.');
+        }
+        if (error.message && error.message.includes('SignTxnsError')) {
+          throw new Error('Failed to sign transaction. Please check your wallet connection.');
+        }
+
+        throw error;
+      } finally {
+        // Always clear pending state after a shorter delay
+        setTimeout(() => {
+          setPendingTransaction(false);
+        }, 500);
+      }
     },
-    [signTransactionGroup]
+    [account, isConnected, pendingTransaction]
   );
 
   const getAccountInfo = async () => {
@@ -425,6 +375,29 @@ export const WalletProvider = ({ children }) => {
     }
 
     try {
+      // Refresh contract state before attempting to create a new bounty
+      let latestState = null;
+      try {
+        latestState = await contractUtils.getCurrentBounty();
+        setContractState(latestState);
+      } catch (stateError) {
+        console.warn('Unable to refresh contract state before creating bounty:', stateError);
+      }
+
+      const bountyIsActive =
+        latestState &&
+        typeof latestState.status === 'number' &&
+        latestState.amount > 0 &&
+        latestState.status !== BOUNTY_STATUS.CLAIMED &&
+        latestState.status !== BOUNTY_STATUS.REFUNDED;
+
+      if (bountyIsActive) {
+        throw new Error(
+          'A bounty is already active on this contract. Complete or refund it from My Bounties before creating a new one.'
+        );
+      }
+
+      // Build transactions
       const txns = await contractUtils.createBounty(
         account,
         amount,
@@ -433,13 +406,13 @@ export const WalletProvider = ({ children }) => {
         verifierAddress
       );
 
-      // Sign transaction group
+      // Sign transaction group (user will see wallet prompt here)
       const signedTxns = await signTransactionGroup(txns);
 
-      // Submit transaction group
+      // Submit transaction group to blockchain
       const txId = await contractUtils.submitTransactionGroup(signedTxns);
       
-      // Wait for confirmation
+      // Wait for confirmation on blockchain
       await contractUtils.waitForConfirmation(txId);
       
       // Reload contract state
@@ -448,15 +421,36 @@ export const WalletProvider = ({ children }) => {
       return txId;
     } catch (error) {
       console.error('Failed to create bounty:', error);
-      
-      // Provide user-friendly error messages
+
       if (error.message && error.message.includes('User Rejected Request')) {
         throw new Error('Transaction was cancelled. Please try again and approve the transaction in your wallet.');
       } else if (error.message && error.message.includes('SignTxnsError')) {
         throw new Error('Failed to sign transaction. Please check your wallet connection and try again.');
-      } else {
-        throw error;
       }
+
+      // Re-check contract state to surface clearer messaging on logic failures
+      let stateAfterFailure = null;
+      try {
+        stateAfterFailure = await contractUtils.getCurrentBounty();
+        setContractState(stateAfterFailure);
+      } catch (stateRefreshError) {
+        console.warn('Unable to inspect contract state after failed bounty creation:', stateRefreshError);
+      }
+
+      const stillActive =
+        stateAfterFailure &&
+        typeof stateAfterFailure.status === 'number' &&
+        stateAfterFailure.amount > 0 &&
+        stateAfterFailure.status !== BOUNTY_STATUS.CLAIMED &&
+        stateAfterFailure.status !== BOUNTY_STATUS.REFUNDED;
+
+      if (stillActive) {
+        throw new Error(
+          'The smart contract rejected this transaction because an earlier bounty is still open. Visit My Bounties to approve, claim, or refund it before trying again.'
+        );
+      }
+
+      throw error;
     }
   };
 
@@ -545,6 +539,12 @@ export const WalletProvider = ({ children }) => {
     return contractUtils.canPerformAction(account, action, contractState);
   };
 
+  // Force clear pending transaction state
+  const clearPendingTransaction = () => {
+    console.log('🧹 Manually clearing pending transaction state');
+    setPendingTransaction(false);
+  };
+
   const value = {
     account,
     isConnected,
@@ -555,6 +555,8 @@ export const WalletProvider = ({ children }) => {
     signTransactionGroup,
     getAccountInfo,
     algodClient,
+    pendingTransaction,
+    clearPendingTransaction,
     // Smart contract functions
     contractState,
     isLoadingContract,
