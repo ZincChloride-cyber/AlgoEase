@@ -1,7 +1,7 @@
 // Contract configuration
 export const CONTRACT_CONFIG = {
   // Contract App ID (set after deployment)
-  APP_ID: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749335380,
+  APP_ID: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749570296,
   
   // Algorand network configuration
   NETWORK: {
@@ -35,7 +35,8 @@ export const CONTRACT_CONFIG = {
     ACCEPTED: 1,
     APPROVED: 2,
     CLAIMED: 3,
-    REFUNDED: 4
+    REFUNDED: 4,
+    REJECTED: 5
   },
 
   // Method names
@@ -43,6 +44,7 @@ export const CONTRACT_CONFIG = {
     CREATE_BOUNTY: 'create_bounty',
     ACCEPT_BOUNTY: 'accept_bounty',
     APPROVE_BOUNTY: 'approve_bounty',
+    REJECT_BOUNTY: 'reject_bounty',
     CLAIM_BOUNTY: 'claim',
     REFUND_BOUNTY: 'refund',
     AUTO_REFUND: 'auto_refund',
@@ -58,6 +60,7 @@ export const getStatusName = (statusCode) => {
     case CONTRACT_CONFIG.STATUS.APPROVED: return 'approved';
     case CONTRACT_CONFIG.STATUS.CLAIMED: return 'claimed';
     case CONTRACT_CONFIG.STATUS.REFUNDED: return 'refunded';
+    case CONTRACT_CONFIG.STATUS.REJECTED: return 'rejected';
     default: return 'unknown';
   }
 };
@@ -69,6 +72,7 @@ export const getStatusColor = (status) => {
     case 'approved': return 'bg-purple-100 text-purple-800';
     case 'claimed': return 'bg-gray-100 text-gray-800';
     case 'refunded': return 'bg-red-100 text-red-800';
+    case 'rejected': return 'bg-orange-100 text-orange-800';
     default: return 'bg-gray-100 text-gray-800';
   }
 };

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import contractUtils from '../utils/contractUtils';
+import apiService from '../utils/api';
 
 const statusStyles = {
   open: { label: 'Open', badge: 'bg-gradient-to-r from-secondary-400/25 to-secondary-500/40 text-secondary-100 border border-secondary-300/40' },
@@ -9,6 +10,7 @@ const statusStyles = {
   approved: { label: 'Approved', badge: 'bg-gradient-to-r from-accent-400/25 to-accent-500/45 text-accent-50 border border-accent-300/40' },
   claimed: { label: 'Claimed', badge: 'bg-white/10 text-white/80 border border-white/20' },
   refunded: { label: 'Refunded', badge: 'bg-red-500/20 text-red-100 border border-red-400/40' },
+  rejected: { label: 'Rejected', badge: 'bg-orange-500/20 text-orange-100 border border-orange-400/40' },
 };
 
 const BountyDetail = () => {
@@ -20,6 +22,7 @@ const BountyDetail = () => {
     loadContractState,
     acceptBounty,
     approveBounty,
+    rejectBounty,
     claimBounty,
     refundBounty,
     canPerformAction,
@@ -35,7 +38,16 @@ const BountyDetail = () => {
     const loadBountyData = async () => {
       try {
         setLoading(true);
-        await loadContractState();
+        // Fetch bounty from API
+        const bountyData = await apiService.getBounty(id);
+        if (isMounted) {
+          setBounty({
+            ...bountyData,
+            client: bountyData.clientAddress,
+            freelancer: bountyData.freelancerAddress,
+            verifier: bountyData.verifierAddress,
+          });
+        }
       } catch (error) {
         console.error('Failed to load bounty data:', error);
         if (isMounted) {
@@ -48,71 +60,80 @@ const BountyDetail = () => {
       }
     };
 
-    loadBountyData();
+    if (id) {
+      loadBountyData();
+    }
 
     return () => {
       isMounted = false;
     };
-  }, [id, loadContractState]);
-
-  useEffect(() => {
-    if (!contractState) {
-      setBounty(null);
-      return;
-    }
-
-    const status = contractUtils.getStatusName(contractState.status);
-    setBounty({
-      id: contractState.bountyCount,
-      title: contractState.taskDescription
-        ? contractState.taskDescription.slice(0, 42) + (contractState.taskDescription.length > 42 ? '…' : '')
-        : 'Smart Contract Bounty',
-      description: contractState.taskDescription || 'This bounty is powered by Algorand smart contracts.',
-      amount: contractState.amount,
-      deadline: contractState.deadline,
-      status,
-      client: contractState.clientAddress,
-      freelancer: contractState.freelancerAddress,
-      verifier: contractState.verifierAddress,
-      createdAt: new Date().toISOString(),
-      requirements: [
-        'Deliver work matching the description and milestones.',
-        'Submit artefacts or repository links for review.',
-        'Respect deadline blocks; refunds trigger automatically after expiry.',
-      ],
-      submissions: [],
-    });
-  }, [contractState]);
+  }, [id]);
 
   const actions = useMemo(() => {
-    if (!bounty) return [];
+    if (!bounty || !isConnected) return [];
+    const bountyId = bounty.contractId || parseInt(id);
+    const isVerifier = account === bounty.verifier;
+    const isClient = account === bounty.client;
+    const isFreelancer = account === bounty.freelancer;
+    
     return [
-      bounty.status === 'open' && canPerformAction('accept') && {
+      bounty.status === 'open' && !isClient && {
         label: 'Accept bounty',
         action: 'accept',
-        handler: acceptBounty,
+        handler: async () => {
+          // First update backend
+          await apiService.acceptBounty(bountyId);
+          // Then call contract
+          return await acceptBounty(bountyId);
+        },
         style: 'btn-primary',
       },
-      bounty.status === 'accepted' && canPerformAction('approve') && {
+      bounty.status === 'accepted' && isVerifier && {
         label: 'Approve work',
         action: 'approve',
-        handler: approveBounty,
+        handler: async () => {
+          // First update backend
+          await apiService.approveBounty(bountyId);
+          // Then call contract
+          return await approveBounty(bountyId);
+        },
         style: 'btn-primary',
       },
-      bounty.status === 'approved' && canPerformAction('claim') && {
+      bounty.status === 'accepted' && isVerifier && {
+        label: 'Reject work',
+        action: 'reject',
+        handler: async () => {
+          // First update backend
+          await apiService.rejectBounty(bountyId);
+          // Then call contract (uses refund function)
+          return await rejectBounty(bountyId);
+        },
+        style: 'btn-outline',
+      },
+      bounty.status === 'approved' && isFreelancer && {
         label: 'Claim payment',
         action: 'claim',
-        handler: claimBounty,
+        handler: async () => {
+          // First update backend
+          await apiService.claimBounty(bountyId);
+          // Then call contract
+          return await claimBounty(bountyId);
+        },
         style: 'btn-secondary',
       },
-      canPerformAction('refund') && {
+      (bounty.status === 'open' || bounty.status === 'accepted') && (isClient || isVerifier) && {
         label: 'Initiate refund',
         action: 'refund',
-        handler: refundBounty,
+        handler: async () => {
+          // First update backend
+          await apiService.refundBounty(bountyId);
+          // Then call contract
+          return await refundBounty(bountyId);
+        },
         style: 'btn-outline',
       },
     ].filter(Boolean);
-  }, [bounty, canPerformAction, acceptBounty, approveBounty, claimBounty, refundBounty]);
+  }, [bounty, id, account, isConnected, acceptBounty, approveBounty, rejectBounty, claimBounty, refundBounty]);
 
   const formatDate = (value) => {
     if (!value) {
@@ -139,15 +160,18 @@ const BountyDetail = () => {
     const selected = actions.find((item) => item.action === action);
     if (!selected) return;
 
-    if (!canPerformAction(action)) {
-      alert(`You cannot ${action} this bounty at this time`);
-      return;
-    }
-
     try {
       setActionLoading(true);
       const txId = await selected.handler();
       alert(`Success! Transaction ID: ${txId}`);
+      // Reload bounty data after action
+      const bountyData = await apiService.getBounty(id);
+      setBounty({
+        ...bountyData,
+        client: bountyData.clientAddress,
+        freelancer: bountyData.freelancerAddress,
+        verifier: bountyData.verifierAddress,
+      });
     } catch (error) {
       console.error(`Failed to ${action} bounty:`, error);
       alert(`Failed to ${action} bounty: ${error.message}`);

@@ -1,159 +1,131 @@
-# Pending Transaction Error - FIXED ✅
+# Fix for "Pending Transaction" Error
 
 ## Problem
-You see this error: **"⚠️ A transaction is pending. Please complete or cancel it in your Pera Wallet app before creating a new bounty."**
+When creating a bounty, you get the error:
+```
+Another transaction is pending. Please complete or cancel it in your Pera Wallet app, then try again.
+```
 
-## What Causes This?
+## Cause
+This error occurs when Pera Wallet has a pending transaction that hasn't been completed or cancelled. Pera Wallet only allows one transaction at a time, so you must resolve the pending transaction before creating a new one.
 
-This error happens when:
-1. **Pera Wallet has a transaction waiting** - You started a transaction but didn't approve/reject it in your wallet
-2. **App state got stuck** - The app thinks a transaction is pending even if your wallet is clear
-3. **Previous transaction didn't clear properly** - A timeout or error left the state in "pending" mode
+## Solution
 
-## Solutions Implemented ✅
+### Immediate Fix (What You Need to Do)
+1. **Open Pera Wallet**
+   - If using mobile: Open the Pera Wallet mobile app
+   - If using desktop: Check the Pera Wallet browser extension
 
-### 1. **Clear Pending State Button** (NEW!)
-When you see the yellow warning:
-- Click the **"Clear Pending State"** button
-- This instantly resets the app's internal state
-- Try creating your bounty again
+2. **Check for Pending Transactions**
+   - Look for any pending transaction requests
+   - You should see a transaction waiting for your approval
 
-### 2. **Automatic State Clearing**
-The app now automatically clears the pending state:
-- After 500ms when transaction completes (success or error)
-- When you reconnect your wallet
-- When Pera Wallet error code 4100 is detected
+3. **Complete or Cancel the Transaction**
+   - **Approve** the transaction if it's valid
+   - **Cancel** the transaction if it's not needed or was stuck
 
-### 3. **Open Pera Wallet Web**
-If you're on desktop:
-- Click **"Open Pera Wallet Web →"** button
-- Complete or reject any pending transactions there
-- Return to AlgoEase and try again
+4. **Wait a Few Seconds**
+   - Allow Pera Wallet to clear the pending state
+   - Wait 3-5 seconds after completing/cancelling
 
-## Step-by-Step Fix
+5. **Try Again**
+   - Return to the AlgoEase website
+   - Click "Clear Pending State" button (if shown) or try creating the bounty again
 
-### Option A: Quick Fix (Most Common)
-1. See the yellow warning on Create Bounty page
-2. Click **"Clear Pending State"** button
-3. Click **"Create Bounty"** again
-4. ✅ Should work now!
+### Code Improvements (Already Implemented)
+1. ✅ **Better Error Detection**: Updated error handling to detect pending transaction errors more reliably
+2. ✅ **Automatic State Clearing**: Automatically clears pending state when error is detected
+3. ✅ **Clear Pending Button**: Added "Clear Pending State" button in error modal
+4. ✅ **Improved Delays**: Increased delays to prevent race conditions
+5. ✅ **Better Error Messages**: More helpful error messages with instructions
 
-### Option B: Check Pera Wallet
-1. Open Pera Wallet app (mobile) or visit https://web.perawallet.app (desktop)
-2. Look for any pending transactions
-3. Either approve or reject them
-4. Return to AlgoEase
-5. Refresh the page (Ctrl + Shift + R)
-6. Try creating bounty again
+## How to Use the Fix
 
-### Option C: Reconnect Wallet
-1. Click your address in the top-right corner
-2. Click "Disconnect"
-3. Click "Connect Wallet" again
-4. The pending state is now cleared
-5. Try creating bounty again
+### Option 1: Use the "Clear Pending State" Button
+1. When you see the error, click the "Clear Pending State & Retry" button in the error modal
+2. This will clear the app's pending state
+3. Then complete/cancel the transaction in Pera Wallet
+4. Wait a few seconds and try again
 
-### Option D: Hard Reset (Nuclear Option)
-1. Open browser console (F12)
-2. Run: `localStorage.clear()`
-3. Refresh the page (Ctrl + Shift + R)
-4. Reconnect your wallet
-5. Try creating bounty again
+### Option 2: Manual Fix
+1. Complete or cancel the pending transaction in Pera Wallet
+2. Wait 3-5 seconds
+3. Click "Try Again" in the error modal
+4. The app will automatically clear its pending state and retry
+
+### Option 3: Clear State from Form
+1. If you see the "Transaction Pending" warning on the form
+2. Click the "Clear State" button
+3. Complete/cancel the transaction in Pera Wallet
+4. Wait a few seconds and try creating the bounty again
+
+## Prevention Tips
+1. **Complete Transactions Promptly**: Don't leave transactions pending in Pera Wallet
+2. **Check Wallet Before Creating**: Check Pera Wallet for pending transactions before creating a new bounty
+3. **Use One Device**: If using mobile, make sure you're checking the same device where Pera Wallet is installed
+4. **Wait for Confirmation**: Wait for transaction confirmation before starting a new transaction
 
 ## Technical Details
 
-### What Changed in the Code?
+### Error Code
+- **Error Code**: 4100 (Pera Wallet pending transaction error)
+- **Error Message**: "Another transaction is pending in Pera Wallet"
 
-**1. Added `clearPendingTransaction()` function:**
-```javascript
-// In WalletContext.js
-const clearPendingTransaction = () => {
-  console.log('🧹 Manually clearing pending transaction state');
-  setPendingTransaction(false);
-};
-```
+### What the Code Does
+1. Detects pending transaction errors (code 4100 or "pending" in message)
+2. Automatically clears the app's pending state
+3. Shows helpful error message with instructions
+4. Provides "Clear Pending State" button for easy recovery
+5. Increases delays to prevent race conditions
 
-**2. Reduced timeout from 1000ms → 500ms:**
-- Faster recovery from errors
-- Less chance of stuck state
+### State Management
+- The app tracks its own pending state (`pendingTransaction`)
+- Pera Wallet also tracks its own pending state
+- The app clears its state when error is detected
+- User must clear Pera Wallet's state manually (complete/cancel transaction)
 
-**3. Auto-clear on wallet events:**
-- Reconnection
-- New connection
-- Error code 4100 (Pera Wallet pending transaction)
+## Testing
+After applying the fix:
+1. ✅ Error detection works correctly
+2. ✅ Pending state is cleared automatically
+3. ✅ "Clear Pending State" button works
+4. ✅ Error messages are helpful
+5. ✅ Retry logic works correctly
 
-**4. Better error handling:**
-- Detects Pera Wallet's error code 4100
-- Automatically clears app state when wallet has the issue
-- Provides clearer error messages
+## Next Steps
+1. Complete or cancel the pending transaction in Pera Wallet
+2. Wait a few seconds
+3. Try creating the bounty again
+4. The transaction should work correctly
 
-### Error Code Reference
-- **4100**: Another transaction is pending in Pera Wallet
-- **4001**: User rejected the transaction
-- **4200**: Unsupported method
+## Troubleshooting
 
-## Prevention Tips
+### If Error Persists
+1. **Disconnect and Reconnect Wallet**
+   - Disconnect your wallet from the app
+   - Reconnect your wallet
+   - Try creating the bounty again
 
-To avoid this error in the future:
+2. **Restart Pera Wallet**
+   - Close Pera Wallet completely
+   - Reopen Pera Wallet
+   - Check for any pending transactions
+   - Complete or cancel them
+   - Try creating the bounty again
 
-1. **Complete All Transactions**
-   - Always approve or reject transactions promptly
-   - Don't leave transactions hanging in your wallet
+3. **Clear Browser Cache**
+   - Clear your browser cache
+   - Refresh the page
+   - Reconnect your wallet
+   - Try creating the bounty again
 
-2. **One Transaction at a Time**
-   - Wait for previous transaction to complete
-   - Check "Transaction Confirmed" message before starting another
+4. **Check Wallet Balance**
+   - Ensure you have sufficient ALGO balance
+   - Check that the app account has funds for box storage (if using boxes)
 
-3. **Use Pera Wallet Web on Desktop**
-   - More reliable than deep links
-   - Visit https://web.perawallet.app
-   - Keep it open in a tab
-
-4. **Keep App Updated**
-   - Refresh after long idle periods
-   - Clear cache if weird behavior occurs (Ctrl + Shift + R)
-
-## Still Having Issues?
-
-If you still see the error after trying all solutions:
-
-1. **Check Browser Console** (F12 → Console tab)
-   - Look for error messages
-   - Check for network issues
-   - Screenshot any errors
-
-2. **Verify Wallet State**
-   - Make sure Pera Wallet app is updated
-   - Check your connection to Algorand TestNet
-   - Verify you have sufficient ALGO balance
-
-3. **Test with Simple Transaction**
-   - Click "Test Pera Wallet Signing" button
-   - This creates a 0 ALGO test transaction
-   - Helps diagnose if issue is wallet or app
-
-4. **Contact Support**
-   - Share browser console errors
-   - Share transaction IDs if any
-   - Mention which solution you tried
-
-## Why This Happened
-
-The original implementation had:
-- **Long timeout** (1 second) for clearing state
-- **No manual override** - users couldn't force clear
-- **No auto-clear** on wallet reconnection
-- **Generic error handling** - didn't detect wallet-specific issues
-
-Now fixed with:
-- ✅ Shorter timeout (500ms)
-- ✅ Manual "Clear Pending State" button
-- ✅ Auto-clear on reconnection
-- ✅ Wallet-specific error detection (code 4100)
-- ✅ Better user guidance
-
----
-
-**Last Updated:** November 11, 2025  
-**Status:** FIXED ✅  
-**Version:** v1.1 (Pending Transaction Fix)
+## Support
+If the error persists after following these steps:
+1. Check the browser console for detailed error messages
+2. Check Pera Wallet for any stuck transactions
+3. Verify your wallet is connected correctly
+4. Try disconnecting and reconnecting your wallet

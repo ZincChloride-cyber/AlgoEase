@@ -5,6 +5,7 @@ import WalletTroubleshoot from '../components/WalletTroubleshoot';
 import PeraWalletDebug from '../components/PeraWalletDebug';
 import PeraWalletTest from '../components/PeraWalletTest';
 import apiService from '../utils/api';
+import contractUtils, { GLOBAL_STATE_KEYS } from '../utils/contractUtils';
 
 const blueprint = [
   {
@@ -30,9 +31,11 @@ const CreateBounty = () => {
     getAccountInfo,
     pendingTransaction,
     clearPendingTransaction,
+    checkWalletReady,
     loadContractState,
     isLoadingContract,
     refundBounty,
+    autoRefundBounty,
   } = useWallet();
   const [formData, setFormData] = useState({
     title: '',
@@ -49,21 +52,16 @@ const CreateBounty = () => {
   const [isResolving, setIsResolving] = useState(false);
   const [modalMode, setModalMode] = useState('create');
 
-  const hasActiveContractBounty =
-    contractState &&
-    typeof contractState.status === 'number' &&
-    contractState.amount > 0 &&
-    contractState.status !== 3 &&
-    contractState.status !== 4;
+  // Removed: No longer checking for active bounties to block creation
+  // Contract now supports multiple bounties
+  const hasActiveContractBounty = false; // Always allow creating new bounties
 
   const isCreateDisabled =
-    isSubmitting || pendingTransaction || isLoadingContract || hasActiveContractBounty || isResolving;
+    isSubmitting || pendingTransaction || isLoadingContract || isResolving;
   const primaryButtonLabel = isSubmitting
     ? 'Creating…'
     : pendingTransaction
     ? 'Transaction pending…'
-    : hasActiveContractBounty
-    ? 'Resolve active bounty'
     : isLoadingContract
     ? 'Syncing contract…'
     : 'Deploy bounty';
@@ -90,27 +88,8 @@ const CreateBounty = () => {
     setSubmitError('');
     setTransactionId('');
 
-    // Refresh contract state before proceeding to ensure no active bounty remains
-    let latestState = contractState;
-    try {
-      latestState = await loadContractState();
-    } catch (stateError) {
-      console.warn('Unable to refresh contract state before creating bounty:', stateError);
-    }
-
-    const activeBounty =
-      latestState &&
-      typeof latestState.status === 'number' &&
-      latestState.amount > 0 &&
-      latestState.status !== 3 &&
-      latestState.status !== 4;
-
-    if (activeBounty) {
-      setSubmitError(
-        'An existing bounty is still open on-chain. Head to My Bounties to approve, claim, or refund it before creating another.'
-      );
-      return;
-    }
+    // V3 contract supports multiple concurrent bounties via box storage
+    // No need to check for existing bounties before creating a new one
 
     setIsSubmitting(true);
     setShowProgressModal(true);
@@ -142,6 +121,22 @@ const CreateBounty = () => {
       // Stage 2: Signing - createBounty will prompt wallet
       setProgressStage('signing');
       
+      // Check if wallet is ready before attempting transaction
+      try {
+        console.log('🔍 Checking wallet readiness...');
+        await checkWalletReady();
+        console.log('✅ Wallet is ready');
+      } catch (walletError) {
+        console.warn('⚠️ Wallet readiness check failed:', walletError);
+        // Continue anyway - the transaction will fail if wallet is not ready
+      }
+      
+      // Clear any pending transaction state before attempting new transaction
+      clearPendingTransaction();
+      
+      // Wait a moment to ensure state is cleared
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       // This will handle signing, submitting, and confirming
       let txId;
       try {
@@ -152,17 +147,26 @@ const CreateBounty = () => {
           verifierAddress
         );
       } catch (txError) {
+        // Always clear pending state on error
+        clearPendingTransaction();
+        
         // Check for specific error conditions
         if (txError.message && txError.message.includes('cancelled')) {
           throw new Error('Transaction signing was cancelled. Please try again.');
         }
-        if (txError.message && txError.message.includes('pending')) {
-          throw new Error('Another transaction is pending. Please complete or cancel it in your Pera Wallet app, then try again.');
+        if (txError.message && (txError.message.includes('pending') || txError.message.includes('4100'))) {
+          // Clear state and provide helpful error message
+          await new Promise(resolve => setTimeout(resolve, 500));
+          throw new Error('Another transaction is pending in Pera Wallet. Please complete or cancel it in your wallet app, then try again.');
         }
-        if (txError.message && txError.message.includes('4100')) {
-          throw new Error('Another transaction is pending in your wallet. Please complete or cancel it first, then try again.');
-        }
-        throw txError;
+        
+        // Log the actual error for debugging
+        console.error('Transaction error:', txError);
+        
+        // Show the actual error message to the user
+        // V3 contract supports multiple bounties, so no need for auto-refund logic
+        const errorMessage = txError.message || txError.toString() || 'Unknown error occurred';
+        throw new Error(`Failed to create bounty: ${errorMessage}`);
       }
 
       setTransactionId(txId);
@@ -172,24 +176,87 @@ const CreateBounty = () => {
       setProgressStage('persisting');
       
       try {
-        // Create a simple auth token from wallet address (basic approach)
-        // In production, you'd sign a message and verify on backend
-        const authToken = `wallet:${account}:${Date.now()}`;
-        apiService.setAuthToken(authToken);
+        // Set auth token - backend expects the address directly as Bearer token
+        apiService.setAuthToken(account);
+        console.log('🔐 Auth token set for account:', account);
         
-        await apiService.createBounty({
+        // Get the bounty_id from contract after creation
+        // For V3 contract, we use bounty_count - 1 as the ID
+        // Wait a bit for the contract state to update
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        let bountyId;
+        try {
+          const state = await contractUtils.getContractState();
+          console.log('📊 Contract state after creation:', state);
+          const bountyCounter = state['bounty_count'] || state[GLOBAL_STATE_KEYS.BOUNTY_COUNT] || 0;
+          console.log('🔢 Bounty counter from state:', bountyCounter);
+          
+          if (bountyCounter > 0) {
+            // The new bounty_id is bounty_counter - 1 (since counter was incremented after creation)
+            bountyId = bountyCounter - 1;
+            console.log('✅ Got bounty ID from contract:', bountyId);
+          } else {
+            console.warn('⚠️ Bounty counter is 0, trying to get from transaction');
+            // Try to get bounty ID from transaction or use a fallback
+            // For now, we'll use the transaction ID as a temporary identifier
+            // The backend will handle the actual contract ID
+            bountyId = null;
+          }
+        } catch (bountyIdError) {
+          console.error('❌ Failed to get bounty ID from contract:', bountyIdError);
+          bountyId = null;
+        }
+        
+        // If we couldn't get the bounty ID, we'll let the backend handle it
+        // The backend can query the contract to get the latest bounty_count
+        const bountyData = {
           title: formData.title,
           description: formData.description,
           amount: parseFloat(formData.amount),
           deadline: new Date(formData.deadline).toISOString(),
           verifierAddress: verifierAddress,
-          contractId: contractState?.bountyCount || Date.now(),
+          contractId: bountyId !== null ? String(bountyId) : undefined, // Let backend set it if we don't have it
           transactionId: txId,
           status: 'open',
-        });
+        };
+        
+        console.log('💾 Saving bounty to backend:', JSON.stringify(bountyData, null, 2));
+        console.log('🌐 API URL:', process.env.REACT_APP_API_URL || 'http://localhost:5000/api');
+        
+        try {
+          // First create the bounty in the database (might not have contractId yet)
+          const savedBounty = await apiService.createBounty(bountyData);
+          console.log('✅ Bounty saved to backend successfully:', savedBounty);
+          
+          // If we got the bounty ID from the contract, update the database
+          if (bountyId !== null && savedBounty.id) {
+            try {
+              await apiService.updateBounty(savedBounty.id, { contractId: String(bountyId) });
+              console.log('✅ Bounty contract ID updated:', bountyId);
+            } catch (updateError) {
+              console.warn('⚠️ Failed to update contract ID:', updateError);
+              // Not critical - the bounty is already saved
+            }
+          }
+        } catch (apiError) {
+          console.error('❌ API call failed:', apiError);
+          console.error('❌ Error details:', {
+            message: apiError.message,
+            stack: apiError.stack,
+            response: apiError.response
+          });
+          throw apiError; // Re-throw to be caught by outer catch
+        }
       } catch (backendError) {
-        console.warn('Backend persistence failed (non-critical):', backendError);
-        // Don't fail the whole flow if backend is down
+        console.error('❌ Backend persistence failed:', backendError);
+        console.error('❌ Full error object:', backendError);
+        setSubmitError(
+          `Bounty was created on-chain but failed to save to database: ${backendError.message || 'Unknown error'}. ` +
+          `Please check the browser console and backend logs for details.`
+        );
+        // Don't fail the whole flow if backend is down - transaction is already confirmed
+        // But show error to user
       }
 
       // Stage 6: Complete
@@ -210,6 +277,9 @@ const CreateBounty = () => {
       }, 3000);
     } catch (error) {
       console.error('Error creating bounty:', error);
+      
+      // Show the actual error to the user
+      // V3 contract supports multiple bounties, so no auto-refund logic needed
       setProgressStage('error');
       setSubmitError(error.message || 'Failed to create bounty. Please try again.');
     } finally {
@@ -267,6 +337,41 @@ const CreateBounty = () => {
     setProgressStage('preparing');
     setTransactionId('');
     setModalMode('create');
+    setSubmitError('');
+  };
+
+  const handleTryAgain = async () => {
+    // Clear pending transaction state first
+    clearPendingTransaction();
+    
+    // Wait a moment for state to clear
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // If there's an error about existing bounty and user is authorized, try to handle it
+    if (submitError && (
+      submitError.includes('earlier bounty is still open') ||
+      (submitError.includes('existing bounty') && !submitError.includes('not authorized'))
+    )) {
+      // Close modal and retry the entire process
+      handleCloseModal();
+      // Small delay to ensure modal closes
+      await new Promise(resolve => setTimeout(resolve, 300));
+      // Retry the submission
+      proceedWithBountyCreation();
+    } else if (submitError && (submitError.includes('pending') || submitError.includes('4100'))) {
+      // For pending transaction errors, close modal and let user retry
+      handleCloseModal();
+      // Wait a bit longer for Pera Wallet to clear
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      // User can try again after clearing the pending transaction in their wallet
+    } else {
+      // Just close the modal for other errors
+      handleCloseModal();
+    }
+  };
+
+  const handleGoToMyBounties = () => {
+    window.location.href = '/my-bounties';
   };
 
   if (!isConnected) {
@@ -293,7 +398,16 @@ const CreateBounty = () => {
         stage={progressStage}
         txId={transactionId}
         error={submitError}
-        onClose={handleCloseModal}
+        onClose={progressStage === 'error' ? handleTryAgain : handleCloseModal}
+        onGoToMyBounties={submitError && submitError.includes('not authorized') ? handleGoToMyBounties : null}
+        onClearPending={() => {
+          clearPendingTransaction();
+          console.log('🧹 Cleared pending transaction state from error modal');
+          // Close modal after clearing state
+          setTimeout(() => {
+            handleCloseModal();
+          }, 500);
+        }}
         mode={modalMode}
       />
       <div className="glass-card p-10">
@@ -453,30 +567,7 @@ const CreateBounty = () => {
               </div>
             </div>
           )}
-      {hasActiveContractBounty && (
-        <div className="mt-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-100">
-          There is already an active bounty on the contract. Visit the My Bounties page to approve, claim, or refund it
-          before creating another.
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              className="btn-primary text-xs uppercase tracking-[0.2em]"
-              onClick={handleResolveActiveBounty}
-              disabled={isResolving || pendingTransaction || isSubmitting}
-            >
-              {isResolving ? 'Processing refund…' : 'Refund stuck bounty'}
-            </button>
-            <button
-              type="button"
-              className="btn-outline text-xs uppercase tracking-[0.2em]"
-              onClick={() => (window.location.href = '/my-bounties')}
-              disabled={isResolving}
-            >
-              Open My Bounties
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Removed: Active bounty warning - contract now supports multiple bounties */}
       {isLoadingContract && (
         <div className="mt-3 rounded-2xl border border-white/15 bg-white/5 p-3 text-xs text-white/60">
           Syncing the latest contract state…

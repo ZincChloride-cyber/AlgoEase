@@ -51,8 +51,9 @@ def main():
     approval_program = compile_program(algod_client, "contracts/algoease_approval.teal")
     clear_program = compile_program(algod_client, "contracts/algoease_clear.teal")
 
-    # Global schema: 4 uints, 4 byte slices (matches your contract)
-    global_schema = transaction.StateSchema(num_uints=4, num_byte_slices=4)
+    # Global schema: 1 uint (bounty_counter), 0 byte slices (bounties stored in boxes)
+    # Box storage doesn't count toward global schema limits
+    global_schema = transaction.StateSchema(num_uints=1, num_byte_slices=0)
     local_schema  = transaction.StateSchema(num_uints=0, num_byte_slices=0)
 
     # Suggested params

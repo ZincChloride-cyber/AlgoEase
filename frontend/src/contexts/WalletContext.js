@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import algosdk from 'algosdk/dist/browser/algosdk.min.js';
 import { PeraWalletConnect } from '@perawallet/connect';
 import { Buffer } from 'buffer';
-import contractUtils, { BOUNTY_STATUS } from '../utils/contractUtils';
+import contractUtils, { BOUNTY_STATUS, GLOBAL_STATE_KEYS } from '../utils/contractUtils';
 
 if (typeof window !== 'undefined' && !window.Buffer) {
   window.Buffer = Buffer;
@@ -154,7 +154,10 @@ export const WalletProvider = ({ children }) => {
 
       // Check if there's already a pending transaction
       if (pendingTransaction) {
-        throw new Error('A transaction is already in progress. Please complete or cancel it first.');
+        console.warn('⚠️ Transaction already in progress, clearing state and retrying...');
+        // Clear the pending state and wait a bit longer
+        setPendingTransaction(false);
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       console.log('Signing transaction group with', txns.length, 'transactions');
@@ -162,8 +165,10 @@ export const WalletProvider = ({ children }) => {
       try {
         setPendingTransaction(true);
         
-        // Add a small delay to ensure any previous transaction is fully cleared
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Add a delay to ensure any previous transaction is fully cleared
+        // Increased delay to allow Pera Wallet to clear any pending state
+        // Also helps prevent race conditions
+        await new Promise(resolve => setTimeout(resolve, 800));
         
         // Log detailed transaction info for debugging
         console.log('🔍 Transaction Details:');
@@ -176,22 +181,46 @@ export const WalletProvider = ({ children }) => {
           });
         });
         
+        // Verify all transactions are valid before formatting
+        txns.forEach((txn, idx) => {
+          if (!txn) {
+            throw new Error(`Transaction ${idx} is null or undefined`);
+          }
+          if (typeof txn.toByte !== 'function') {
+            throw new Error(`Transaction ${idx} is missing toByte method. Type: ${typeof txn}, Constructor: ${txn.constructor?.name}`);
+          }
+          if (!txn.from) {
+            throw new Error(`Transaction ${idx} is missing 'from' address`);
+          }
+        });
+
         // Pera Wallet expects transactions in a specific format
         // Each transaction needs to be properly formatted for signing
-        const txnGroup = txns.map((txn) => {
-          // Verify the transaction is valid
-          if (!txn) {
-            console.error('Invalid transaction: transaction is null or undefined');
-            throw new Error('Invalid transaction - transaction is null');
-          }
+        const txnGroup = txns.map((txn, idx) => {
+          try {
+            // Verify the transaction has required properties
+            const fromAddr = txn.from ? (typeof txn.from === 'string' ? txn.from : algosdk.encodeAddress(txn.from.publicKey)) : null;
+            
+            console.log(`Transaction ${idx} details:`, {
+              type: txn.constructor.name,
+              from: fromAddr,
+              hasGroup: !!txn.group,
+              groupId: txn.group ? Buffer.from(txn.group).toString('base64') : 'none',
+              fee: txn.fee,
+              hasToByte: typeof txn.toByte === 'function'
+            });
 
-          // Return transaction in Pera Wallet format
-          // The txn should be the raw Transaction object
-          return {
-            txn: txn,
-            // Optional: specify signers if different from txn.from
-            // signers: [account]
-          };
+            // Return transaction in Pera Wallet format
+            // The txn should be the raw Transaction object
+            return {
+              txn: txn,
+              // Optional: specify signers if different from txn.from
+              // signers: [account]
+            };
+          } catch (err) {
+            console.error(`Error formatting transaction ${idx}:`, err);
+            throw new Error(`Failed to format transaction ${idx}: ${err.message}`);
+          }
         });
 
         console.log('📤 Prepared transaction group for signing:', {
@@ -206,10 +235,89 @@ export const WalletProvider = ({ children }) => {
         console.log('   - On Mobile: Make sure Pera Wallet app is installed');
         console.log('   - Check browser console for errors');
 
+        // Verify transactions can be serialized before sending
+        console.log('🔍 Verifying transaction serialization...');
+        console.log('🔍 DEBUG: About to serialize transactions, count:', txns.length);
+        try {
+          txns.forEach((txn, idx) => {
+            const bytes = txn.toByte();
+            console.log(`Transaction ${idx} serialized successfully:`, bytes.length, 'bytes');
+          });
+        } catch (err) {
+          console.error('❌ Transaction serialization failed:', err);
+          throw new Error(`Transaction cannot be serialized: ${err.message}`);
+        }
+
         // Sign the transaction group using Pera Wallet
         // IMPORTANT: Pera Wallet expects an array of transaction groups
         // Pass the transactions wrapped in an array
-        const signedTxns = await peraWallet.signTransaction([txnGroup]);
+        console.log('Calling peraWallet.signTransaction with:', {
+          groupCount: 1,
+          txnCount: txnGroup.length,
+          firstTxnType: txnGroup[0]?.txn?.constructor?.name,
+          peraWalletType: typeof peraWallet,
+          hasSignTransaction: typeof peraWallet.signTransaction === 'function'
+        });
+        
+        // Verify peraWallet is properly initialized
+        if (!peraWallet || typeof peraWallet.signTransaction !== 'function') {
+          throw new Error('Pera Wallet is not properly initialized. Please refresh the page and reconnect your wallet.');
+        }
+
+        // Check if wallet is actually connected - use account state instead of peraWallet.isConnected
+        const isDesktop = !isMobile();
+        
+        console.log('Pera Wallet connection status:', {
+          isConnected: isConnected,
+          isDesktop,
+          hasConnector: !!peraWallet.connector,
+          account: account,
+          connectorType: peraWallet.connector?.constructor?.name
+        });
+
+        if (!isConnected || !account) {
+          throw new Error('Wallet is not connected. Please reconnect your wallet.');
+        }
+
+        // On desktop, Pera Wallet might need web wallet
+        if (isDesktop) {
+          console.log('🖥️ Desktop detected - Pera Wallet may need web wallet (web.perawallet.app)');
+          console.log('💡 If transaction doesn\'t appear, open https://web.perawallet.app in another tab');
+        }
+
+        // Log the exact format being sent to Pera Wallet
+        console.log('📋 Transaction group format for Pera Wallet:', {
+          outerArrayLength: 1,
+          innerArrayLength: txnGroup.length,
+          firstTxnHasTxn: !!txnGroup[0]?.txn,
+          firstTxnType: txnGroup[0]?.txn?.constructor?.name
+        });
+
+        // Add timeout wrapper to detect if signTransaction hangs
+        console.log('⏳ Calling peraWallet.signTransaction...');
+        console.log('⏳ DEBUG: signTransaction call starting now...');
+        
+        // Wrap in try-catch to catch any immediate errors
+        let signPromise;
+        try {
+          signPromise = peraWallet.signTransaction([txnGroup]);
+          console.log('⏳ DEBUG: signTransaction promise created, type:', typeof signPromise);
+        } catch (syncError) {
+          console.error('❌ DEBUG: signTransaction threw synchronous error:', syncError);
+          throw new Error(`Failed to initiate transaction signing: ${syncError.message}`);
+        }
+        
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => {
+            console.error('❌ DEBUG: Timeout reached - Pera Wallet did not respond');
+            reject(new Error('Pera Wallet signTransaction timed out after 30 seconds. The wallet may not be responding. Please check if Pera Wallet is open and try again.'));
+          }, 30000);
+        });
+
+        console.log('⏳ Waiting for Pera Wallet to respond...');
+        console.log('⏳ DEBUG: About to await Promise.race...');
+        const signedTxns = await Promise.race([signPromise, timeoutPromise]);
+        console.log('✅ DEBUG: Promise.race completed, got result:', signedTxns);
 
         console.log('✅ Received signed transactions:', {
           count: signedTxns?.length,
@@ -226,10 +334,22 @@ export const WalletProvider = ({ children }) => {
       } catch (error) {
         console.error('Failed to sign transaction group:', error);
 
-        // Handle specific error codes
-        if (error.code === 4100 || (error.message && error.message.includes('4100'))) {
-          // Force clear the pending state since this is a wallet-side issue
+        // Handle specific error codes - pending transaction errors
+        if (error.code === 4100 || 
+            (error.message && (
+              error.message.includes('4100') || 
+              error.message.includes('pending') || 
+              error.message.includes('Pending') ||
+              error.message.includes('another transaction') ||
+              error.message.includes('Another transaction')
+            ))) {
+          // Force clear the pending state immediately since this is a wallet-side issue
+          console.error('⚠️ Pending transaction error detected (code 4100). Clearing state...');
           setPendingTransaction(false);
+          
+          // Wait a moment to ensure state is cleared
+          await new Promise(resolve => setTimeout(resolve, 200));
+          
           throw new Error('Another transaction is pending in Pera Wallet. Please complete or reject it in your wallet app, then try again.');
         }
         if (error.message && error.message.includes('User Rejected Request')) {
@@ -264,14 +384,19 @@ export const WalletProvider = ({ children }) => {
 
       // Check if there's already a pending transaction
       if (pendingTransaction) {
-        throw new Error('A transaction is already in progress. Please complete or cancel it first.');
+        console.warn('⚠️ Transaction already in progress, clearing state and retrying...');
+        // Clear the pending state and wait a bit longer
+        setPendingTransaction(false);
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       try {
         setPendingTransaction(true);
         
-        // Add a small delay to ensure any previous transaction is fully cleared
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Add a delay to ensure any previous transaction is fully cleared
+        // Increased delay to allow Pera Wallet to clear any pending state
+        // Also helps prevent race conditions
+        await new Promise(resolve => setTimeout(resolve, 800));
         
         // Verify the transaction has the required methods
         if (!txn || typeof txn.toByte !== 'function') {
@@ -296,10 +421,22 @@ export const WalletProvider = ({ children }) => {
       } catch (error) {
         console.error('Failed to sign transaction:', error);
 
-        // Handle specific error codes
-        if (error.code === 4100 || (error.message && error.message.includes('4100'))) {
-          // Force clear the pending state since this is a wallet-side issue
+        // Handle specific error codes - pending transaction errors
+        if (error.code === 4100 || 
+            (error.message && (
+              error.message.includes('4100') || 
+              error.message.includes('pending') || 
+              error.message.includes('Pending') ||
+              error.message.includes('another transaction') ||
+              error.message.includes('Another transaction')
+            ))) {
+          // Force clear the pending state immediately since this is a wallet-side issue
+          console.error('⚠️ Pending transaction error detected (code 4100). Clearing state...');
           setPendingTransaction(false);
+          
+          // Wait a moment to ensure state is cleared
+          await new Promise(resolve => setTimeout(resolve, 200));
+          
           throw new Error('Another transaction is pending in Pera Wallet. Please complete or reject it in your wallet app, then try again.');
         }
         if (error.message && error.message.includes('User Rejected Request')) {
@@ -376,25 +513,17 @@ export const WalletProvider = ({ children }) => {
 
     try {
       // Refresh contract state before attempting to create a new bounty
-      let latestState = null;
+      // Removed: No longer checking for active bounties
+      // Contract now supports creating multiple bounties simultaneously
+      // The contract will track the latest bounty's state on-chain
+      // Previous bounties' state may be overwritten, but funds remain locked until refunded
+      
+      // Still load state for reference, but don't block creation
       try {
-        latestState = await contractUtils.getCurrentBounty();
+        const latestState = await contractUtils.getCurrentBounty();
         setContractState(latestState);
       } catch (stateError) {
         console.warn('Unable to refresh contract state before creating bounty:', stateError);
-      }
-
-      const bountyIsActive =
-        latestState &&
-        typeof latestState.status === 'number' &&
-        latestState.amount > 0 &&
-        latestState.status !== BOUNTY_STATUS.CLAIMED &&
-        latestState.status !== BOUNTY_STATUS.REFUNDED;
-
-      if (bountyIsActive) {
-        throw new Error(
-          'A bounty is already active on this contract. Complete or refund it from My Bounties before creating a new one.'
-        );
       }
 
       // Build transactions
@@ -428,39 +557,31 @@ export const WalletProvider = ({ children }) => {
         throw new Error('Failed to sign transaction. Please check your wallet connection and try again.');
       }
 
-      // Re-check contract state to surface clearer messaging on logic failures
-      let stateAfterFailure = null;
+      // Removed: No longer checking for existing bounties as blocking condition
+      // Contract now supports multiple bounties, so this error handling is not needed
+      // Still refresh state for reference
       try {
-        stateAfterFailure = await contractUtils.getCurrentBounty();
+        const stateAfterFailure = await contractUtils.getCurrentBounty();
         setContractState(stateAfterFailure);
       } catch (stateRefreshError) {
         console.warn('Unable to inspect contract state after failed bounty creation:', stateRefreshError);
-      }
-
-      const stillActive =
-        stateAfterFailure &&
-        typeof stateAfterFailure.status === 'number' &&
-        stateAfterFailure.amount > 0 &&
-        stateAfterFailure.status !== BOUNTY_STATUS.CLAIMED &&
-        stateAfterFailure.status !== BOUNTY_STATUS.REFUNDED;
-
-      if (stillActive) {
-        throw new Error(
-          'The smart contract rejected this transaction because an earlier bounty is still open. Visit My Bounties to approve, claim, or refund it before trying again.'
-        );
       }
 
       throw error;
     }
   };
 
-  const acceptBounty = async () => {
+  const acceptBounty = async (bountyId) => {
     if (!account) {
       throw new Error('Wallet not connected');
     }
 
+    if (!bountyId) {
+      throw new Error('Bounty ID is required');
+    }
+
     try {
-      const txn = await contractUtils.acceptBounty(account);
+      const txn = await contractUtils.acceptBounty(account, bountyId);
       const signedTxn = await signTransaction(txn);
       const txId = await contractUtils.submitTransaction(signedTxn);
       
@@ -474,13 +595,17 @@ export const WalletProvider = ({ children }) => {
     }
   };
 
-  const approveBounty = async () => {
+  const approveBounty = async (bountyId) => {
     if (!account) {
       throw new Error('Wallet not connected');
     }
 
+    if (!bountyId) {
+      throw new Error('Bounty ID is required');
+    }
+
     try {
-      const txn = await contractUtils.approveBounty(account);
+      const txn = await contractUtils.approveBounty(account, bountyId);
       const signedTxn = await signTransaction(txn);
       const txId = await contractUtils.submitTransaction(signedTxn);
       
@@ -494,13 +619,41 @@ export const WalletProvider = ({ children }) => {
     }
   };
 
-  const claimBounty = async () => {
+  const rejectBounty = async (bountyId) => {
     if (!account) {
       throw new Error('Wallet not connected');
     }
 
+    if (!bountyId) {
+      throw new Error('Bounty ID is required');
+    }
+
     try {
-      const txn = await contractUtils.claimBounty(account);
+      const txn = await contractUtils.rejectBounty(account, bountyId);
+      const signedTxn = await signTransaction(txn);
+      const txId = await contractUtils.submitTransaction(signedTxn);
+      
+      await contractUtils.waitForConfirmation(txId);
+      await loadContractState();
+      
+      return txId;
+    } catch (error) {
+      console.error('Failed to reject bounty:', error);
+      throw error;
+    }
+  };
+
+  const claimBounty = async (bountyId) => {
+    if (!account) {
+      throw new Error('Wallet not connected');
+    }
+
+    if (!bountyId) {
+      throw new Error('Bounty ID is required');
+    }
+
+    try {
+      const txn = await contractUtils.claimBounty(account, bountyId);
       const signedTxn = await signTransaction(txn);
       const txId = await contractUtils.submitTransaction(signedTxn);
       
@@ -514,13 +667,17 @@ export const WalletProvider = ({ children }) => {
     }
   };
 
-  const refundBounty = async () => {
+  const refundBounty = async (bountyId) => {
     if (!account) {
       throw new Error('Wallet not connected');
     }
 
+    if (!bountyId) {
+      throw new Error('Bounty ID is required');
+    }
+
     try {
-      const txn = await contractUtils.refundBounty(account);
+      const txn = await contractUtils.refundBounty(account, bountyId);
       const signedTxn = await signTransaction(txn);
       const txId = await contractUtils.submitTransaction(signedTxn);
       
@@ -534,16 +691,63 @@ export const WalletProvider = ({ children }) => {
     }
   };
 
+  // Auto refund - calls auto_refund method on contract (anyone can call after deadline)
+  const autoRefundBounty = async (bountyId) => {
+    if (!account) {
+      throw new Error('Wallet not connected');
+    }
+
+    if (!bountyId) {
+      throw new Error('Bounty ID is required');
+    }
+
+    try {
+      const txn = await contractUtils.autoRefundBounty(account, bountyId);
+      const signedTxn = await signTransaction(txn);
+      const txId = await contractUtils.submitTransaction(signedTxn);
+      
+      await contractUtils.waitForConfirmation(txId);
+      await loadContractState();
+      
+      return txId;
+    } catch (error) {
+      console.error('Failed to auto refund bounty:', error);
+      throw error;
+    }
+  };
+
   const canPerformAction = (action) => {
     if (!account || !contractState) return false;
     return contractUtils.canPerformAction(account, action, contractState);
   };
 
   // Force clear pending transaction state
-  const clearPendingTransaction = () => {
+  const clearPendingTransaction = useCallback(() => {
     console.log('🧹 Manually clearing pending transaction state');
     setPendingTransaction(false);
-  };
+    // Also try to reset any wallet-side state by disconnecting and reconnecting
+    // But don't disconnect if wallet is connected - just clear our state
+  }, []);
+
+  // Check if Pera Wallet is ready (no pending transactions)
+  const checkWalletReady = useCallback(async () => {
+    if (!isConnected || !account) {
+      return false;
+    }
+
+    try {
+      // Clear any pending state first
+      setPendingTransaction(false);
+      
+      // Wait a moment for Pera Wallet to sync
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      return true;
+    } catch (error) {
+      console.error('Error checking wallet readiness:', error);
+      return false;
+    }
+  }, [isConnected, account]);
 
   const value = {
     account,
@@ -557,6 +761,7 @@ export const WalletProvider = ({ children }) => {
     algodClient,
     pendingTransaction,
     clearPendingTransaction,
+    checkWalletReady,
     // Smart contract functions
     contractState,
     isLoadingContract,
@@ -564,8 +769,10 @@ export const WalletProvider = ({ children }) => {
     createBounty,
     acceptBounty,
     approveBounty,
+    rejectBounty,
     claimBounty,
     refundBounty,
+    autoRefundBounty,
     canPerformAction
   };
 

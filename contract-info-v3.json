@@ -1,0 +1,10 @@
+{
+  "appId": 749540140,
+  "appAddress": "PHIBV4HGUNK3UDHGFVN6IY6HLGUGEHJGHBIADFYDUP3XJUWJV33QWMX32I",
+  "network": "testnet",
+  "deployedAt": "2025-11-12T15:19:04.428Z",
+  "creator": "3AU6XYBNSEW7DRXJVNTGDAZLUYL54CTW3BUYKTBN6LX76KJ3EAVIQLPEBI",
+  "algodUrl": "https://testnet-api.algonode.cloud",
+  "indexerUrl": "https://testnet-idx.algonode.cloud",
+  "version": "v3"
+}

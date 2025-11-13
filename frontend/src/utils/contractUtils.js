@@ -9,7 +9,7 @@ if (typeof window !== 'undefined' && !window.Buffer) {
 // Contract configuration
 const CONTRACT_CONFIG = {
   // These will be set after contract deployment
-  appId: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749335380,
+  appId: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749570296,
   // TestNet configuration
   algodClient: new algosdk.Algodv2(
     '',
@@ -88,6 +88,7 @@ export const CONTRACT_METHODS = {
   CREATE_BOUNTY: 'create_bounty',
   ACCEPT_BOUNTY: 'accept_bounty',
   APPROVE_BOUNTY: 'approve_bounty',
+  REJECT_BOUNTY: 'reject_bounty',
   CLAIM_BOUNTY: 'claim',
   REFUND_BOUNTY: 'refund',
   AUTO_REFUND: 'auto_refund',
@@ -100,7 +101,8 @@ export const BOUNTY_STATUS = {
   ACCEPTED: 1,
   APPROVED: 2,
   CLAIMED: 3,
-  REFUNDED: 4
+  REFUNDED: 4,
+  REJECTED: 5
 };
 
 // Global state keys from the contract
@@ -132,6 +134,39 @@ class ContractUtils {
     return this.appId;
   }
 
+  // Get box name for a bounty counter (matches contract's get_box_name function)
+  getBoxName(bountyCounter) {
+    const prefix = new Uint8Array(Buffer.from('bounty_', 'utf8'));
+    const counterBytes = algosdk.encodeUint64(bountyCounter);
+    const boxName = new Uint8Array(prefix.length + counterBytes.length);
+    boxName.set(prefix);
+    boxName.set(counterBytes, prefix.length);
+    return boxName;
+  }
+
+  // Get the current bounty counter from global state
+  async getBountyCounter() {
+    try {
+      const appInfo = await this.algodClient.getApplicationByID(this.appId).do();
+      const globalState = appInfo.params['global-state'];
+      
+      // Find bounty_counter in global state
+      const counterState = globalState.find(item => {
+        const key = Buffer.from(item.key, 'base64').toString('utf8');
+        return key === 'bounty_counter';
+      });
+      
+      if (counterState) {
+        return counterState.value.uint;
+      }
+      
+      return 0; // Default if not found
+    } catch (error) {
+      console.error('Failed to get bounty counter:', error);
+      return 0; // Return 0 as default
+    }
+  }
+
   // Get suggested transaction parameters
   async getSuggestedParams() {
     try {
@@ -144,7 +179,7 @@ class ContractUtils {
   }
 
   // Create application call transaction
-  async createAppCallTransaction(sender, method, args = [], accounts = [], note = '') {
+  async createAppCallTransaction(sender, method, args = [], accounts = [], note = '', boxes = []) {
     if (!this.appId) {
       throw new Error('Contract app ID not set. Please deploy the contract first.');
     }
@@ -155,6 +190,7 @@ class ContractUtils {
     console.log('  - Sender:', sender);
     console.log('  - Accounts array:', accounts);
     console.log('  - Accounts length:', accounts.length);
+    console.log('  - Boxes:', boxes);
 
     const suggestedParams = await this.getSuggestedParams();
     
@@ -162,9 +198,15 @@ class ContractUtils {
     args.forEach(arg => {
       if (typeof arg === 'string') {
         appArgs.push(new Uint8Array(new TextEncoder().encode(arg)));
-      } else if (typeof arg === 'number') {
-        appArgs.push(algosdk.encodeUint64(arg));
+      } else if (typeof arg === 'number' || typeof arg === 'bigint') {
+        // Use BigInt for large numbers to avoid precision issues
+        // eslint-disable-next-line no-undef
+        const bigIntArg = typeof arg === 'bigint' ? arg : BigInt(arg);
+        appArgs.push(algosdk.encodeUint64(bigIntArg));
+      } else if (arg instanceof Uint8Array) {
+        appArgs.push(arg);
       } else {
+        console.warn('Unexpected arg type:', typeof arg, arg);
         appArgs.push(arg);
       }
     });
@@ -176,6 +218,7 @@ class ContractUtils {
       suggestedParams,
       appArgs,
       accounts,
+      boxes: boxes.length > 0 ? boxes : undefined,
       note: note ? new Uint8Array(new TextEncoder().encode(note)) : undefined
     });
 
@@ -260,12 +303,55 @@ class ContractUtils {
         taskDescriptionLength: taskDescription.length
       });
 
+      // V3 contract uses box storage for bounties
+      // We need to get the current bounty_count to calculate the box name
+      // Box name format: "bounty_" + Itob(bounty_id)
+      // The new bounty_id will be the current bounty_count
+      let boxReferences = [];
+      try {
+        const contractState = await this.getContractState();
+        const currentBountyCount = contractState['bounty_count'] || contractState[GLOBAL_STATE_KEYS.BOUNTY_COUNT] || 0;
+        const newBountyId = currentBountyCount; // The new bounty will use this ID
+        
+        console.log('📦 Creating box reference for new bounty:', {
+          currentBountyCount,
+          newBountyId,
+          appId: this.appId
+        });
+        
+        // Create box name: "bounty_" + Itob(bounty_id)
+        const prefix = new TextEncoder().encode('bounty_');
+        const bountyIdBytes = algosdk.encodeUint64(newBountyId);
+        const boxNameBytes = new Uint8Array(prefix.length + bountyIdBytes.length);
+        boxNameBytes.set(prefix, 0);
+        boxNameBytes.set(bountyIdBytes, prefix.length);
+        
+        // Create box reference for the transaction
+        // Format: { appIndex: appId, name: boxNameBytes }
+        boxReferences = [{
+          appIndex: this.appId,
+          name: boxNameBytes
+        }];
+        
+        console.log('📦 Box reference created:', {
+          boxName: Buffer.from(boxNameBytes).toString('hex'),
+          boxNameLength: boxNameBytes.length,
+          bountyId: newBountyId
+        });
+      } catch (stateError) {
+        console.warn('⚠️ Could not get contract state to calculate box reference:', stateError);
+        console.warn('⚠️ Attempting to create bounty without box reference (may fail if boxes are required)');
+        // Try without box reference - the contract might handle it
+        // If this fails, the user will need to ensure the contract state is accessible
+      }
+      
       const appCallTxn = await this.createAppCallTransaction(
         sender,
         CONTRACT_METHODS.CREATE_BOUNTY,
         [amountMicroAlgo, deadlineTimestamp, taskDescription],
         foreignAccounts,
-        'AlgoEase: Create Bounty'
+        'AlgoEase: Create Bounty',
+        boxReferences // Include box reference for box creation
       );
 
       console.debug('createBounty: built transactions', {
@@ -273,6 +359,7 @@ class ContractUtils {
         paymentTxnReceiver: paymentTxn.to,
         appCallTxnAccounts: appCallTxn.appAccounts || [],
         appCallTxnArgs: appCallTxn.appArgs?.length || 0,
+        appCallTxnFee: appCallTxn.fee,
       });
 
       // Assign group ID to transactions (mutates in place)
@@ -286,15 +373,42 @@ class ContractUtils {
     }
   }
 
-  // Accept bounty
-  async acceptBounty(sender) {
+  // Helper function to create box reference
+  createBoxReference(bountyId) {
+    if (!this.appId) {
+      throw new Error('Contract app ID not set');
+    }
+    
+    // Box name format: "bounty_" + Itob(bounty_id)
+    const prefix = new TextEncoder().encode('bounty_');
+    const bountyIdBytes = algosdk.encodeUint64(bountyId);
+    const boxNameBytes = new Uint8Array(prefix.length + bountyIdBytes.length);
+    boxNameBytes.set(prefix, 0);
+    boxNameBytes.set(bountyIdBytes, prefix.length);
+    
+    return [{
+      appIndex: this.appId,
+      name: boxNameBytes
+    }];
+  }
+
+  // Accept bounty (requires bounty_id)
+  async acceptBounty(sender, bountyId) {
     try {
+      if (!bountyId) {
+        throw new Error('Bounty ID is required for acceptance');
+      }
+      
+      // Create box reference for the bounty box
+      const boxReferences = this.createBoxReference(bountyId);
+      
       const appCallTxn = await this.createAppCallTransaction(
         sender,
         CONTRACT_METHODS.ACCEPT_BOUNTY,
+        [algosdk.encodeUint64(bountyId)],
         [],
-        [],
-        'AlgoEase: Accept Bounty'
+        'AlgoEase: Accept Bounty',
+        boxReferences
       );
 
       return appCallTxn;
@@ -304,15 +418,23 @@ class ContractUtils {
     }
   }
 
-  // Approve bounty (verifier only)
-  async approveBounty(sender) {
+  // Approve bounty (verifier only, requires bounty_id)
+  async approveBounty(sender, bountyId) {
     try {
+      if (!bountyId) {
+        throw new Error('Bounty ID is required for approval');
+      }
+      
+      // Create box reference for the bounty box
+      const boxReferences = this.createBoxReference(bountyId);
+      
       const appCallTxn = await this.createAppCallTransaction(
         sender,
         CONTRACT_METHODS.APPROVE_BOUNTY,
+        [algosdk.encodeUint64(bountyId)],
         [],
-        [],
-        'AlgoEase: Approve Bounty'
+        'AlgoEase: Approve Bounty',
+        boxReferences
       );
 
       return appCallTxn;
@@ -322,15 +444,50 @@ class ContractUtils {
     }
   }
 
-  // Claim bounty payment
-  async claimBounty(sender) {
+  // Reject bounty (verifier only, uses refund function but tracks as rejected)
+  async rejectBounty(sender, bountyId) {
     try {
+      if (!bountyId) {
+        throw new Error('Bounty ID is required for rejection');
+      }
+      
+      // Create box reference for the bounty box
+      const boxReferences = this.createBoxReference(bountyId);
+      
+      // Reject uses the reject_bounty function on the contract
+      const appCallTxn = await this.createAppCallTransaction(
+        sender,
+        CONTRACT_METHODS.REJECT_BOUNTY,
+        [algosdk.encodeUint64(bountyId)],
+        [],
+        'AlgoEase: Reject Bounty',
+        boxReferences
+      );
+
+      return appCallTxn;
+    } catch (error) {
+      console.error('Failed to create reject bounty transaction:', error);
+      throw error;
+    }
+  }
+
+  // Claim bounty payment (requires bounty_id)
+  async claimBounty(sender, bountyId) {
+    try {
+      if (!bountyId) {
+        throw new Error('Bounty ID is required for claiming');
+      }
+      
+      // Create box reference for the bounty box
+      const boxReferences = this.createBoxReference(bountyId);
+      
       const appCallTxn = await this.createAppCallTransaction(
         sender,
         CONTRACT_METHODS.CLAIM_BOUNTY,
+        [algosdk.encodeUint64(bountyId)],
         [],
-        [],
-        'AlgoEase: Claim Bounty'
+        'AlgoEase: Claim Bounty',
+        boxReferences
       );
 
       return appCallTxn;
@@ -340,15 +497,24 @@ class ContractUtils {
     }
   }
 
-  // Refund bounty (manual refund by client or verifier)
-  async refundBounty(sender) {
+  // Refund bounty (manual refund by client or verifier, requires bounty_id)
+  async refundBounty(sender, bountyId) {
     try {
+      if (!bountyId) {
+        throw new Error('Bounty ID is required for refund');
+      }
+
+      // Create box reference for the bounty box
+      const boxReferences = this.createBoxReference(bountyId);
+
+      // V3 contract requires bounty_id as argument: [method, bounty_id]
       const appCallTxn = await this.createAppCallTransaction(
         sender,
         CONTRACT_METHODS.REFUND_BOUNTY,
+        [algosdk.encodeUint64(bountyId)], // Pass bounty_id as argument
         [],
-        [],
-        'AlgoEase: Refund Bounty'
+        'AlgoEase: Refund Bounty',
+        boxReferences
       );
 
       return appCallTxn;
@@ -358,15 +524,24 @@ class ContractUtils {
     }
   }
 
-  // Auto refund bounty (when deadline has passed)
-  async autoRefundBounty(sender) {
+  // Auto refund bounty (when deadline has passed, requires bounty_id)
+  async autoRefundBounty(sender, bountyId) {
     try {
+      if (!bountyId) {
+        throw new Error('Bounty ID is required for auto-refund');
+      }
+
+      // Create box reference for the bounty box
+      const boxReferences = this.createBoxReference(bountyId);
+
+      // V3 contract requires bounty_id as argument: [method, bounty_id]
       const appCallTxn = await this.createAppCallTransaction(
         sender,
         CONTRACT_METHODS.AUTO_REFUND,
+        [algosdk.encodeUint64(bountyId)], // Pass bounty_id as argument
         [],
-        [],
-        'AlgoEase: Auto Refund Bounty'
+        'AlgoEase: Auto Refund Bounty',
+        boxReferences
       );
 
       return appCallTxn;
@@ -408,10 +583,13 @@ class ContractUtils {
         const key = decodeStateKey(item.key);
         const value = item.value;
 
+        // Algorand state: type 1 = bytes, type 2 = uint
         if (value.type === 1) {
-          parsedState[key] = value.uint;
-        } else if (value.type === 2) {
+          // Bytes value
           parsedState[key] = decodeBytesValue(key, value.bytes);
+        } else if (value.type === 2) {
+          // Uint value
+          parsedState[key] = Number(value.uint);
         }
       });
 
@@ -422,37 +600,166 @@ class ContractUtils {
     }
   }
 
-  // Get current bounty information
+  // Get bounty_id from contract after creation (bounty_count - 1)
+  async getBountyIdAfterCreation() {
+    try {
+      const state = await this.getContractState();
+      console.log('📊 Full contract state:', state);
+      // V3 contract uses 'bounty_count' as the key
+      const bountyCounter = state['bounty_count'] || state[GLOBAL_STATE_KEYS.BOUNTY_COUNT] || 0;
+      console.log('🔢 Bounty counter value:', bountyCounter);
+      if (bountyCounter === 0) {
+        console.warn('⚠️ Bounty counter is 0, returning null');
+        return null;
+      }
+      // The new bounty_id is bounty_count - 1 (since counter was incremented after creation)
+      const bountyId = bountyCounter - 1;
+      console.log('✅ Calculated bounty ID:', bountyId);
+      return bountyId;
+    } catch (error) {
+      console.error('❌ Failed to get bounty ID:', error);
+      throw error;
+    }
+  }
+
+  // Get bounty from box storage by bounty_id
+  async getBountyFromBox(bountyId) {
+    try {
+      if (!this.appId) {
+        throw new Error('Contract app ID not set');
+      }
+
+      // Box name format: "bounty_" + Itob(bounty_id)
+      // Contract uses: Concat(Bytes("bounty_"), Itob(bounty_id))
+      const prefix = new TextEncoder().encode('bounty_');
+      const bountyIdBytes = algosdk.encodeUint64(bountyId);
+      const boxNameBytes = new Uint8Array(prefix.length + bountyIdBytes.length);
+      boxNameBytes.set(prefix, 0);
+      boxNameBytes.set(bountyIdBytes, prefix.length);
+      
+      // Convert to base64 for API call
+      const boxNameBase64 = Buffer.from(boxNameBytes).toString('base64');
+      
+      // Get box value using indexer or algod
+      // Try using indexer first (more reliable for box reads)
+      try {
+        const boxValue = await this.indexerClient.lookupApplicationBoxByIDandName(
+          this.appId,
+          boxNameBase64
+        ).do();
+        
+        if (!boxValue || !boxValue.value) {
+          return null;
+        }
+        
+        // boxValue.value is base64 encoded
+        const boxData = Buffer.from(boxValue.value, 'base64');
+
+        // Parse box data
+        // Format: client_addr(32) + freelancer_addr(32) + verifier_addr(32) + 
+        //         amount(8) + deadline(8) + status(1) + task_desc(variable)
+        const data = new Uint8Array(boxData);
+        
+        const clientAddr = algosdk.encodeAddress(data.slice(0, 32));
+        const freelancerBytes = data.slice(32, 64);
+        // Check if freelancer is zero address (all zeros)
+        const isZeroAddress = freelancerBytes.every(byte => byte === 0);
+        const freelancerAddr = isZeroAddress ? null : algosdk.encodeAddress(freelancerBytes);
+        const verifierAddr = algosdk.encodeAddress(data.slice(64, 96));
+        const amountMicro = algosdk.decodeUint64(data.slice(96, 104), 'big');
+        const deadlineSeconds = algosdk.decodeUint64(data.slice(104, 112), 'big');
+        const status = data[112];
+        const taskDesc = new TextDecoder().decode(data.slice(113));
+
+        return {
+          bountyId,
+          clientAddress: clientAddr,
+          freelancerAddress: freelancerAddr,
+          verifierAddress: verifierAddr,
+          amount: amountMicro / 1000000,
+          deadline: new Date(deadlineSeconds * 1000),
+          status,
+          taskDescription: taskDesc
+        };
+      } catch (indexerError) {
+        // Fallback to algod if indexer fails
+        console.warn('Indexer box read failed, trying algod:', indexerError);
+        const boxValue = await this.algodClient.getApplicationBoxByName(
+          this.appId,
+          boxNameBase64
+        ).do();
+        
+        if (!boxValue || !boxValue.value) {
+          return null;
+        }
+        
+        const boxData = Buffer.from(boxValue.value, 'base64');
+        const data = new Uint8Array(boxData);
+        
+        const clientAddr = algosdk.encodeAddress(data.slice(0, 32));
+        const freelancerBytes = data.slice(32, 64);
+        const isZeroAddress = freelancerBytes.every(byte => byte === 0);
+        const freelancerAddr = isZeroAddress ? null : algosdk.encodeAddress(freelancerBytes);
+        const verifierAddr = algosdk.encodeAddress(data.slice(64, 96));
+        const amountMicro = algosdk.decodeUint64(data.slice(96, 104), 'big');
+        const deadlineSeconds = algosdk.decodeUint64(data.slice(104, 112), 'big');
+        const status = data[112];
+        const taskDesc = new TextDecoder().decode(data.slice(113));
+
+        return {
+          bountyId,
+          clientAddress: clientAddr,
+          freelancerAddress: freelancerAddr,
+          verifierAddress: verifierAddr,
+          amount: amountMicro / 1000000,
+          deadline: new Date(deadlineSeconds * 1000),
+          status,
+          taskDescription: taskDesc
+        };
+      }
+    } catch (error) {
+      console.error('Failed to get bounty from box:', error);
+      // If box doesn't exist, return null
+      if (error.status === 404 || error.message?.includes('box not found') || error.message?.includes('does not exist')) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  // Get current bounty information from global state (V3 contract)
   async getCurrentBounty() {
     try {
       const state = await this.getContractState();
       
-      if (!state[GLOBAL_STATE_KEYS.BOUNTY_COUNT] || state[GLOBAL_STATE_KEYS.BOUNTY_COUNT] === 0) {
+      // Check if there's an active bounty (amount > 0 and status not CLAIMED/REFUNDED)
+      const amount = state[GLOBAL_STATE_KEYS.AMOUNT] || 0;
+      const status = state[GLOBAL_STATE_KEYS.STATUS] !== undefined ? state[GLOBAL_STATE_KEYS.STATUS] : null;
+      
+      if (amount === 0 || status === BOUNTY_STATUS.CLAIMED || status === BOUNTY_STATUS.REFUNDED) {
         return null;
       }
 
-      const amountMicro = state[GLOBAL_STATE_KEYS.AMOUNT] || 0;
-      const deadlineSeconds = state[GLOBAL_STATE_KEYS.DEADLINE];
-      const deadlineDate = deadlineSeconds ? new Date(deadlineSeconds * 1000) : null;
-
-      // Ensure task description is a string
-      const taskDesc = state[GLOBAL_STATE_KEYS.TASK_DESCRIPTION];
-      const taskDescription = taskDesc ? String(taskDesc).trim() : '';
-
-      // Ensure addresses are strings
-      const clientAddress = state[GLOBAL_STATE_KEYS.CLIENT_ADDR] ? String(state[GLOBAL_STATE_KEYS.CLIENT_ADDR]) : null;
-      const freelancerAddress = state[GLOBAL_STATE_KEYS.FREELANCER_ADDR] ? String(state[GLOBAL_STATE_KEYS.FREELANCER_ADDR]) : null;
-      const verifierAddress = state[GLOBAL_STATE_KEYS.VERIFIER_ADDR] ? String(state[GLOBAL_STATE_KEYS.VERIFIER_ADDR]) : null;
+      // Parse addresses - handle both string and address formats
+      let clientAddress = state[GLOBAL_STATE_KEYS.CLIENT_ADDR];
+      let freelancerAddress = state[GLOBAL_STATE_KEYS.FREELANCER_ADDR];
+      let verifierAddress = state[GLOBAL_STATE_KEYS.VERIFIER_ADDR];
+      
+      // If addresses are zero addresses or empty, set to null
+      const zeroAddr = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAY5HFKQ';
+      if (clientAddress === zeroAddr || !clientAddress) clientAddress = null;
+      if (freelancerAddress === zeroAddr || !freelancerAddress) freelancerAddress = null;
+      if (verifierAddress === zeroAddr || !verifierAddress) verifierAddress = null;
 
       return {
-        bountyCount: state[GLOBAL_STATE_KEYS.BOUNTY_COUNT],
+        bountyId: state[GLOBAL_STATE_KEYS.BOUNTY_COUNT] - 1, // Latest bounty ID
         clientAddress,
         freelancerAddress,
-        amount: amountMicro / 1000000, // Convert from microALGO to ALGO
-        deadline: deadlineDate || new Date(),
-        status: state[GLOBAL_STATE_KEYS.STATUS] ?? BOUNTY_STATUS.OPEN,
-        taskDescription,
-        verifierAddress
+        verifierAddress,
+        amount: amount / 1000000, // Convert from microALGO
+        deadline: state[GLOBAL_STATE_KEYS.DEADLINE] ? new Date(state[GLOBAL_STATE_KEYS.DEADLINE] * 1000) : null,
+        status: status,
+        taskDescription: state[GLOBAL_STATE_KEYS.TASK_DESCRIPTION] || ''
       };
     } catch (error) {
       console.error('Failed to get current bounty:', error);

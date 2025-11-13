@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
+import apiService from '../utils/api';
 
 const statusStyles = {
   open: { label: 'Open', badge: 'bg-gradient-to-r from-secondary-400/25 to-secondary-500/40 text-secondary-100 border border-secondary-300/40' },
@@ -8,6 +9,7 @@ const statusStyles = {
   approved: { label: 'Approved', badge: 'bg-gradient-to-r from-accent-400/25 to-accent-500/45 text-accent-50 border border-accent-300/40' },
   claimed: { label: 'Claimed', badge: 'bg-white/10 text-white/80 border border-white/20' },
   refunded: { label: 'Refunded', badge: 'bg-red-500/20 text-red-100 border border-red-400/40' },
+  rejected: { label: 'Rejected', badge: 'bg-orange-500/20 text-orange-100 border border-orange-400/40' },
 };
 
 const filters = [
@@ -15,24 +17,122 @@ const filters = [
   { id: 'open', label: 'Open' },
   { id: 'accepted', label: 'In Progress' },
   { id: 'approved', label: 'Approved' },
+  { id: 'rejected', label: 'Rejected' },
 ];
 
 const BountyList = () => {
-  const { contractState, loadContractState } = useWallet();
+  const { account } = useWallet();
   const [bounties, setBounties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let isMounted = true;
 
-    const fetchContractState = async () => {
+    const fetchBounties = async () => {
       try {
         setLoading(true);
-        await loadContractState();
+        setError('');
+        
+        console.log('🔍 Fetching all bounties with filter:', filter);
+        
+        // Fetch bounties from backend API
+        const response = await apiService.getBounties({
+          status: filter !== 'all' ? filter : undefined,
+          page: 1,
+          limit: 100,
+          sortBy: 'createdAt',
+          sortOrder: 'desc'
+        });
+
+        console.log('📥 Raw API response:', {
+          response,
+          responseType: typeof response,
+          hasBounties: !!response.bounties,
+          bountiesIsArray: Array.isArray(response.bounties),
+          responseIsArray: Array.isArray(response)
+        });
+
+        if (!isMounted) return;
+
+        // Ensure response has bounties array - handle multiple response formats
+        let bountiesArray = [];
+        if (response && Array.isArray(response.bounties)) {
+          bountiesArray = response.bounties;
+          console.log('✅ Found bounties in response.bounties:', bountiesArray.length);
+        } else if (Array.isArray(response)) {
+          bountiesArray = response;
+          console.log('✅ Response is directly an array:', bountiesArray.length);
+        } else if (response && response.value && Array.isArray(response.value)) {
+          bountiesArray = response.value;
+          console.log('✅ Found bounties in response.value:', bountiesArray.length);
+        } else if (response && response.data && Array.isArray(response.data)) {
+          bountiesArray = response.data;
+          console.log('✅ Found bounties in response.data:', bountiesArray.length);
+        } else {
+          console.warn('⚠️ Response format unexpected:', {
+            response,
+            responseType: typeof response,
+            hasBounties: !!response?.bounties,
+            bountiesIsArray: Array.isArray(response?.bounties),
+            responseIsArray: Array.isArray(response)
+          });
+          bountiesArray = [];
+        }
+        
+        console.log('📋 Bounties array before transformation:', {
+          count: bountiesArray.length,
+          bounties: bountiesArray
+        });
+        
+        // Transform API response to match component's expected format
+        const transformedBounties = bountiesArray.map((bounty, index) => {
+          // Handle contractId - it might be a number, string, or missing
+          // Use contractId if available, otherwise use database id
+          let displayId = bounty.contractId;
+          if (displayId === null || displayId === undefined || displayId === '') {
+            // Use the database ID as fallback for display
+            displayId = bounty.id || bounty._id || `db-${index}`;
+          }
+          
+          return {
+            id: String(displayId), // Use contractId for ID if available, otherwise database id
+            contractId: bounty.contractId ? String(bounty.contractId) : null, // Store contractId separately
+            databaseId: bounty.id || bounty._id, // Store database ID separately
+            title: bounty.title || 'Untitled Bounty',
+            description: bounty.description || '',
+            amount: typeof bounty.amount === 'number' ? bounty.amount : parseFloat(bounty.amount) || 0,
+            deadline: bounty.deadline,
+            status: (bounty.status || 'open').toLowerCase(), // Normalize status to lowercase
+            client: bounty.clientAddress || bounty.client_address,
+            freelancer: bounty.freelancerAddress || bounty.freelancer_address,
+            verifier: bounty.verifierAddress || bounty.verifier_address,
+            createdAt: bounty.createdAt || bounty.created_at || new Date().toISOString(),
+          };
+        });
+
+        console.log('✅ Transformed bounties for display:', {
+          count: transformedBounties.length,
+          bounties: transformedBounties
+        });
+        
+        console.log('💾 Setting bounties state with', transformedBounties.length, 'bounties');
+        setBounties(transformedBounties);
+        
+        // Log after a short delay to see if state was set
+        setTimeout(() => {
+          console.log('🔍 State check after setBounties - bounties count:', transformedBounties.length);
+        }, 100);
       } catch (error) {
-        console.error('Error loading bounties:', error);
+        console.error('❌ Error loading bounties:', error);
+        console.error('❌ Error details:', {
+          message: error.message,
+          stack: error.stack,
+          response: error.response
+        });
         if (isMounted) {
+          setError(`Failed to load bounties: ${error.message || 'Unknown error'}. Please check the console for details.`);
           setBounties([]);
         }
       } finally {
@@ -42,51 +142,40 @@ const BountyList = () => {
       }
     };
 
-    fetchContractState();
+    fetchBounties();
 
     return () => {
       isMounted = false;
     };
-  }, [loadContractState]);
-
-  useEffect(() => {
-    if (!contractState) {
-      setBounties([]);
-      return;
-    }
-
-    const status =
-      contractState.status === 0
-        ? 'open'
-        : contractState.status === 1
-        ? 'accepted'
-        : contractState.status === 2
-        ? 'approved'
-        : contractState.status === 3
-        ? 'claimed'
-        : 'refunded';
-
-    const bountyData = {
-      id: contractState.bountyCount,
-      title: contractState.taskDescription
-        ? contractState.taskDescription.slice(0, 40) + (contractState.taskDescription.length > 40 ? '…' : '')
-        : 'Smart Contract Bounty',
-      description: contractState.taskDescription || 'Unlock escrow automation with Algorand smart contracts.',
-      amount: contractState.amount,
-      deadline: contractState.deadline,
-      status,
-      client: contractState.clientAddress,
-      freelancer: contractState.freelancerAddress,
-      verifier: contractState.verifierAddress,
-      createdAt: new Date().toISOString(),
-    };
-
-    setBounties([bountyData]);
-  }, [contractState]);
+  }, [filter]);
 
   const filteredBounties = useMemo(() => {
-    if (filter === 'all') return bounties;
-    return bounties.filter((bounty) => bounty.status === filter);
+    console.log('🔄 Filtering bounties:', {
+      filter,
+      totalBounties: bounties.length,
+      bounties: bounties.map(b => ({ id: b.id, status: b.status, title: b.title }))
+    });
+    
+    let result;
+    if (filter === 'all') {
+      result = bounties;
+      console.log('✅ Filter is "all", returning all', result.length, 'bounties');
+    } else {
+      // Case-insensitive status comparison
+      const filterStatus = filter.toLowerCase();
+      result = bounties.filter((bounty) => {
+        const bountyStatus = (bounty.status || 'open').toLowerCase();
+        const matches = bountyStatus === filterStatus;
+        if (!matches) {
+          console.log(`❌ Bounty ${bounty.id} (${bounty.title}) status "${bountyStatus}" doesn't match filter "${filterStatus}"`);
+        }
+        return matches;
+      });
+      console.log('✅ Filter is', filter, ', returning', result.length, 'bounties out of', bounties.length);
+    }
+    
+    console.log('📋 Filtered bounties result:', result.map(b => ({ id: b.id, status: b.status, title: b.title })));
+    return result;
   }, [bounties, filter]);
 
   const formatDate = (value) => {
@@ -143,10 +232,17 @@ const BountyList = () => {
         })}
       </div>
 
+      {error && (
+        <div className="glass-card border border-red-500/40 bg-red-500/10 p-6 text-red-200">
+          <p className="font-semibold">Error loading bounties</p>
+          <p className="mt-2 text-sm">{error}</p>
+        </div>
+      )}
+
       {loading ? (
         <div className="glass-card flex flex-col items-center gap-4 p-12 text-white/60">
           <div className="h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-secondary-300"></div>
-          <p>Syncing on-chain data…</p>
+          <p>Loading bounties…</p>
         </div>
       ) : filteredBounties.length === 0 ? (
         <div className="glass-card flex flex-col items-center gap-4 p-12 text-center text-white/60">
@@ -173,7 +269,9 @@ const BountyList = () => {
                 <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
                   <div className="space-y-4">
                     <div className="flex flex-wrap items-center gap-3">
-                      <span className="tag">Bounty #{bounty.id || '—'}</span>
+                      <span className="tag">
+                        {bounty.contractId ? `Bounty #${bounty.contractId}` : `Bounty ${bounty.id?.slice(0, 8) || '—'}`}
+                      </span>
                       <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] ${statusStyle.badge}`}>
                         {statusStyle.label}
                       </span>
@@ -200,17 +298,25 @@ const BountyList = () => {
                   <div className="flex flex-col items-end gap-6">
                     <div className="glass-panel rounded-2xl border border-white/10 bg-white/5 px-6 py-5 text-right">
                       <p className="text-xs uppercase tracking-[0.32em] text-white/40">Reward</p>
-                      <p className="mt-2 text-3xl font-semibold text-white">{bounty.amount} ALGO</p>
+                      <p className="mt-2 text-3xl font-semibold text-white">
+                        {typeof bounty.amount === 'number' ? bounty.amount.toFixed(2) : parseFloat(bounty.amount || 0).toFixed(2)} ALGO
+                      </p>
                       <p className="text-xs text-white/45">Locked in escrow</p>
                     </div>
                     <div className="flex flex-col gap-2 md:flex-row">
-                      <Link to={`/bounty/${bounty.id}`} className="btn-outline text-sm">
+                      <Link 
+                        to={`/bounty/${bounty.contractId || bounty.databaseId || bounty.id}`} 
+                        className="btn-outline text-sm"
+                      >
                         View details
                       </Link>
-                      {bounty.status === 'open' && (
-                        <button type="button" className="btn-primary text-sm">
+                      {bounty.status === 'open' && account && account !== bounty.client && (
+                        <Link 
+                          to={`/bounty/${bounty.contractId || bounty.databaseId || bounty.id}`}
+                          className="btn-primary text-sm"
+                        >
                           Accept bounty
-                        </button>
+                        </Link>
                       )}
                     </div>
                     <p className="text-xs text-white/40">Created {formatDate(bounty.createdAt)}</p>

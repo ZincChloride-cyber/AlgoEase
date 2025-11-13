@@ -21,19 +21,40 @@ class ApiService {
     const token = localStorage.getItem('authToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('🔐 Added auth token to request');
+    } else {
+      console.warn('⚠️ No auth token found in localStorage');
     }
+
+    console.log(`🌐 Making API request to: ${url}`);
+    console.log('📋 Request config:', {
+      method: config.method || 'GET',
+      headers: config.headers,
+      hasBody: !!config.body
+    });
 
     try {
       const response = await fetch(url, config);
       
+      console.log(`📡 Response status: ${response.status} ${response.statusText}`);
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        console.error('❌ API error response:', errorData);
+        const error = new Error(errorData.message || errorData.error || `HTTP error! status: ${response.status}`);
+        error.status = response.status;
+        error.response = errorData;
+        throw error;
       }
 
-      return await response.json();
+      const data = await response.json();
+      console.log('✅ API response received:', data);
+      return data;
     } catch (error) {
-      console.error(`API request failed for ${endpoint}:`, error);
+      console.error(`❌ API request failed for ${endpoint}:`, error);
+      if (error.message) {
+        console.error('❌ Error message:', error.message);
+      }
       throw error;
     }
   }
@@ -45,8 +66,17 @@ class ApiService {
 
   // Bounty endpoints
   async getBounties(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    // Remove undefined/null values from params to avoid sending them in query string
+    const cleanParams = Object.entries(params).reduce((acc, [key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+    
+    const queryString = new URLSearchParams(cleanParams).toString();
     const endpoint = queryString ? `/bounties?${queryString}` : '/bounties';
+    console.log('🔍 getBounties called with params:', params, '-> cleaned:', cleanParams, '-> endpoint:', endpoint);
     return this.request(endpoint);
   }
 
@@ -77,6 +107,36 @@ class ApiService {
 
   async getUserBounties(address, type = 'all') {
     return this.request(`/bounties/user/${address}?type=${type}`);
+  }
+
+  async acceptBounty(bountyId) {
+    return this.request(`/bounties/${bountyId}/accept`, {
+      method: 'POST',
+    });
+  }
+
+  async approveBounty(bountyId) {
+    return this.request(`/bounties/${bountyId}/approve`, {
+      method: 'POST',
+    });
+  }
+
+  async rejectBounty(bountyId) {
+    return this.request(`/bounties/${bountyId}/reject`, {
+      method: 'POST',
+    });
+  }
+
+  async claimBounty(bountyId) {
+    return this.request(`/bounties/${bountyId}/claim`, {
+      method: 'POST',
+    });
+  }
+
+  async refundBounty(bountyId) {
+    return this.request(`/bounties/${bountyId}/refund`, {
+      method: 'POST',
+    });
   }
 
   // Contract endpoints
