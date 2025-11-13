@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlgoEase Bounty Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #fff;
+        }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #28a745; }
+        .error { background: #dc3545; }
+        .info { background: #17a2b8; }
+        pre { background: #2d2d44; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 AlgoEase Bounty Display Test</h1>
+    <p>This page tests if your browser can fetch and display the bounty from the smart contract.</p>
+    
+    <div id="status"></div>
+    <div id="result"></div>
+
+    <script>
+        const APP_ID = 749335380;
+        const ALGOD_URL = 'https://testnet-api.algonode.cloud';
+        const YOUR_WALLET = '3AU6XYBNSEW7DRXJVNTGDAZLUYL54CTW3BUYKTBN6LX76KJ3EAVIQLPEBI';
+
+        async function testBountyDisplay() {
+            const statusDiv = document.getElementById('status');
+            const resultDiv = document.getElementById('result');
+
+            try {
+                statusDiv.innerHTML = '<div class="status info">📡 Fetching contract state...</div>';
+
+                const response = await fetch(`${ALGOD_URL}/v2/applications/${APP_ID}`);
+                const data = await response.json();
+
+                const globalState = data.params['global-state'];
+                
+                // Decode state
+                const state = {};
+                globalState.forEach(item => {
+                    const key = atob(item.key);
+                    if (item.value.type === 1) {
+                        // bytes
+                        state[key] = item.value.bytes;
+                    } else if (item.value.type === 2) {
+                        // uint
+                        state[key] = item.value.uint;
+                    }
+                });
+
+                // Decode client address from base64
+                const clientAddrBytes = atob(state.client_addr);
+                // Note: This is simplified - actual implementation needs algosdk
+                
+                statusDiv.innerHTML = '<div class="status success">✅ Contract state fetched successfully!</div>';
+                
+                resultDiv.innerHTML = `
+                    <h2>Contract State:</h2>
+                    <pre>${JSON.stringify({
+                        status: state.status,
+                        amount: state.amount / 1000000 + ' ALGO',
+                        bounty_count: state.bounty_count,
+                        deadline: new Date(state.deadline * 1000).toLocaleString(),
+                        client_addr_base64: state.client_addr,
+                        task_desc_base64: state.task_desc
+                    }, null, 2)}</pre>
+                    
+                    <h2>Analysis:</h2>
+                    <div class="status ${state.status === 0 ? 'success' : 'error'}">
+                        ${state.status === 0 ? '✅ Bounty is OPEN' : '❌ Bounty status: ' + state.status}
+                    </div>
+                    
+                    <p><strong>Your wallet:</strong> ${YOUR_WALLET}</p>
+                    <p><strong>Contract client (base64):</strong> ${state.client_addr}</p>
+                    
+                    <h3>Why bounty might not show:</h3>
+                    <ul>
+                        <li>The client address in the contract needs to be decoded and compared with your wallet address</li>
+                        <li>Address format must match exactly (case-sensitive)</li>
+                        <li>The decoded address from base64 should match your wallet</li>
+                    </ul>
+                    
+                    <h3>Next steps:</h3>
+                    <ol>
+                        <li>Hard refresh your AlgoEase website (Ctrl+Shift+R)</li>
+                        <li>Go to "My Bounties" page</li>
+                        <li>Open browser console (F12 → Console tab)</li>
+                        <li>Look for "MyBounties Address Comparison Debug" logs</li>
+                        <li>Check if the addresses match</li>
+                    </ol>
+                `;
+
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ Error: ${error.message}</div>`;
+                resultDiv.innerHTML = `<pre>${error.stack}</pre>`;
+            }
+        }
+
+        testBountyDisplay();
+    </script>
+</body>
+</html>

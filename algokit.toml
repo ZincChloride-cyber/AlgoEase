@@ -1,0 +1,44 @@
+# AlgoKit Configuration for AlgoEase
+
+# Project configuration
+project_name: algoease
+project_description: "Decentralized escrow platform for freelance payments on Algorand"
+
+# Network configuration
+default_network: testnet
+
+# Development settings
+dev_mode: true
+auto_approve: true
+
+# Contract configuration
+contracts:
+  - name: algoease_contract
+    path: projects/algoease-contracts/algoease_contract.py
+    description: "Main escrow contract for bounty management"
+
+# Deployment settings
+deployment:
+  testnet:
+    algod_url: https://testnet-api.algonode.cloud
+    algod_token: ""
+    indexer_url: https://testnet-idx.algonode.cloud
+    indexer_token: ""
+  mainnet:
+    algod_url: https://mainnet-api.algonode.cloud
+    algod_token: ""
+    indexer_url: https://mainnet-idx.algonode.cloud
+    indexer_token: ""
+
+# Wallet configuration
+wallets:
+  - name: default
+    type: kmd
+    path: ~/.algorand/kmd-v0.9/kmd-v0.9.sock
+    token: ""
+
+# Testing configuration
+testing:
+  framework: pytest
+  coverage: true
+  parallel: false

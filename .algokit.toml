@@ -1,0 +1,25 @@
+# AlgoKit Configuration for AlgoEase
+# Root configuration file for the AlgoEase project
+
+# Project configuration
+project_name: algoease
+project_description: "Decentralized escrow platform for freelance payments on Algorand"
+
+# Network configuration  
+default_network: localnet
+
+# Projects configuration
+projects:
+  - name: algoease-contracts
+    path: projects/algoease-contracts
+    type: contract
+    
+# LocalNet configuration
+localnet:
+  algod_url: http://localhost:4001
+  algod_token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  indexer_url: http://localhost:8980
+  indexer_token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  kmd_url: http://localhost:4002
+  kmd_token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+

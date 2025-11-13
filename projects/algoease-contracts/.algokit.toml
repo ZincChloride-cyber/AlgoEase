@@ -1,0 +1,43 @@
+# AlgoKit Configuration for AlgoEase Contracts
+
+# Project configuration
+project_name: algoease-contracts
+project_description: "AlgoEase smart contracts for trustless escrow platform"
+
+# Network configuration
+default_network: localnet
+
+# Development settings
+dev_mode: true
+auto_approve: true
+
+# Contract configuration
+contracts:
+  - name: algoease_contract
+    path: algoease_contract.py
+    description: "Main escrow contract for bounty management"
+
+# Deployment settings
+deployment:
+  localnet:
+    algod_url: http://localhost:4001
+    algod_token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    indexer_url: http://localhost:8980
+    indexer_token: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  testnet:
+    algod_url: https://testnet-api.algonode.cloud
+    algod_token: ""
+    indexer_url: https://testnet-idx.algonode.cloud
+    indexer_token: ""
+  mainnet:
+    algod_url: https://mainnet-api.algonode.cloud
+    algod_token: ""
+    indexer_url: https://mainnet-idx.algonode.cloud
+    indexer_token: ""
+
+# Testing configuration
+testing:
+  framework: pytest
+  coverage: true
+  parallel: false
+

@@ -1,0 +1,8 @@
+pyteal>=0.20.0
+algosdk>=2.6.0
+algokit-utils>=1.0.0
+pytest>=7.4.0
+pytest-cov>=4.0.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0

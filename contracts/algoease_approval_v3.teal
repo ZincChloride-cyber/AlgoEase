@@ -1,0 +1,399 @@
+#pragma version 8
+txn ApplicationID
+int 0
+==
+bnz main_l24
+txn OnCompletion
+int DeleteApplication
+==
+bnz main_l23
+txn OnCompletion
+int UpdateApplication
+==
+bnz main_l22
+txn OnCompletion
+int CloseOut
+==
+bnz main_l21
+txn OnCompletion
+int OptIn
+==
+bnz main_l20
+txn OnCompletion
+int NoOp
+==
+bnz main_l7
+err
+main_l7:
+txna ApplicationArgs 0
+byte "create_bounty"
+==
+bnz main_l19
+txna ApplicationArgs 0
+byte "accept_bounty"
+==
+bnz main_l18
+txna ApplicationArgs 0
+byte "approve_bounty"
+==
+bnz main_l17
+txna ApplicationArgs 0
+byte "claim"
+==
+bnz main_l16
+txna ApplicationArgs 0
+byte "refund"
+==
+bnz main_l15
+txna ApplicationArgs 0
+byte "auto_refund"
+==
+bnz main_l14
+err
+main_l14:
+txn NumAppArgs
+int 1
+==
+assert
+byte "status"
+app_global_get
+store 12
+load 12
+int 3
+!=
+assert
+load 12
+int 4
+!=
+assert
+byte "deadline"
+app_global_get
+store 11
+global LatestTimestamp
+load 11
+>=
+assert
+byte "amount"
+app_global_get
+store 9
+byte "client_addr"
+app_global_get
+store 10
+load 9
+int 0
+>
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 10
+itxn_field Receiver
+load 9
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+byte "status"
+int 4
+app_global_put
+byte "amount"
+int 0
+app_global_put
+int 1
+return
+main_l15:
+txn NumAppArgs
+int 1
+==
+assert
+byte "status"
+app_global_get
+store 8
+load 8
+int 3
+!=
+assert
+load 8
+int 4
+!=
+assert
+byte "deadline"
+app_global_get
+store 7
+global LatestTimestamp
+load 7
+<
+assert
+byte "client_addr"
+app_global_get
+store 6
+txn Sender
+load 6
+==
+txn Sender
+byte "verifier_addr"
+app_global_get
+==
+||
+assert
+byte "amount"
+app_global_get
+store 5
+load 5
+int 0
+>
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 6
+itxn_field Receiver
+load 5
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+byte "status"
+int 4
+app_global_put
+byte "amount"
+int 0
+app_global_put
+int 1
+return
+main_l16:
+txn NumAppArgs
+int 1
+==
+assert
+byte "status"
+app_global_get
+int 2
+==
+assert
+byte "freelancer_addr"
+app_global_get
+store 4
+byte "amount"
+app_global_get
+store 3
+txn Sender
+load 4
+==
+assert
+load 3
+int 0
+>
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 4
+itxn_field Receiver
+load 3
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+byte "status"
+int 3
+app_global_put
+byte "amount"
+int 0
+app_global_put
+int 1
+return
+main_l17:
+txn NumAppArgs
+int 1
+==
+assert
+byte "status"
+app_global_get
+int 1
+==
+assert
+txn Sender
+byte "verifier_addr"
+app_global_get
+==
+assert
+byte "status"
+int 2
+app_global_put
+int 1
+return
+main_l18:
+txn NumAppArgs
+int 1
+==
+assert
+byte "status"
+app_global_get
+int 0
+==
+assert
+global LatestTimestamp
+byte "deadline"
+app_global_get
+<
+assert
+txn Sender
+global ZeroAddress
+!=
+assert
+txn Sender
+byte "client_addr"
+app_global_get
+!=
+assert
+byte "freelancer_addr"
+txn Sender
+app_global_put
+byte "status"
+int 1
+app_global_put
+int 1
+return
+main_l19:
+global GroupSize
+int 2
+==
+assert
+txn GroupIndex
+int 1
+==
+assert
+txn NumAppArgs
+int 4
+==
+assert
+txn NumAccounts
+int 1
+>=
+assert
+gtxn 0 TypeEnum
+int pay
+==
+assert
+gtxn 0 Sender
+txn Sender
+==
+assert
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 0
+txna ApplicationArgs 2
+btoi
+store 1
+load 0
+int 0
+>
+assert
+gtxn 0 Amount
+load 0
+==
+assert
+load 1
+global LatestTimestamp
+>
+assert
+byte "status"
+app_global_get
+store 2
+load 2
+int 3
+==
+load 2
+int 4
+==
+||
+byte "amount"
+app_global_get
+int 0
+==
+||
+assert
+byte "client_addr"
+txn Sender
+app_global_put
+byte "amount"
+load 0
+app_global_put
+byte "deadline"
+load 1
+app_global_put
+byte "task_desc"
+txna ApplicationArgs 3
+app_global_put
+byte "verifier_addr"
+txna Accounts 0
+app_global_put
+byte "freelancer_addr"
+global ZeroAddress
+app_global_put
+byte "status"
+int 0
+app_global_put
+byte "bounty_count"
+byte "bounty_count"
+app_global_get
+int 1
++
+app_global_put
+int 1
+return
+main_l20:
+int 1
+return
+main_l21:
+int 1
+return
+main_l22:
+int 0
+return
+main_l23:
+byte "amount"
+app_global_get
+int 0
+==
+assert
+int 1
+return
+main_l24:
+byte "bounty_count"
+int 0
+app_global_put
+byte "client_addr"
+global ZeroAddress
+app_global_put
+byte "freelancer_addr"
+global ZeroAddress
+app_global_put
+byte "verifier_addr"
+global ZeroAddress
+app_global_put
+byte "amount"
+int 0
+app_global_put
+byte "deadline"
+int 0
+app_global_put
+byte "status"
+int 4
+app_global_put
+byte "task_desc"
+byte ""
+app_global_put
+int 1
+return
