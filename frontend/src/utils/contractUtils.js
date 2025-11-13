@@ -9,7 +9,7 @@ if (typeof window !== 'undefined' && !window.Buffer) {
 // Contract configuration
 const CONTRACT_CONFIG = {
   // These will be set after contract deployment
-  appId: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749570296,
+  appId: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749599170,
   // TestNet configuration
   algodClient: new algosdk.Algodv2(
     '',

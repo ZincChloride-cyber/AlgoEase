@@ -11,31 +11,112 @@ if (typeof window !== 'undefined' && !window.Buffer) {
 const WalletContext = createContext();
 
 const normalizeSignedTxn = (signedTxn) => {
+  console.log('🔍 Normalizing signed transaction:', {
+    type: typeof signedTxn,
+    isArray: Array.isArray(signedTxn),
+    isUint8Array: signedTxn instanceof Uint8Array,
+    constructor: signedTxn?.constructor?.name,
+    keys: signedTxn && typeof signedTxn === 'object' ? Object.keys(signedTxn) : null,
+    hasBlob: signedTxn?.blob !== undefined,
+    hasSignedTxn: signedTxn?.signedTxn !== undefined,
+    hasTxn: signedTxn?.txn !== undefined,
+    raw: signedTxn
+  });
+
   if (!signedTxn) {
     throw new Error('Signed transaction payload is empty.');
   }
 
+  // Already a Uint8Array - return as is
   if (signedTxn instanceof Uint8Array) {
+    console.log('✅ Signed transaction is already Uint8Array');
     return signedTxn;
   }
 
-  if (Array.isArray(signedTxn) && signedTxn.length > 0) {
+  // Handle array - recursively normalize first element
+  if (Array.isArray(signedTxn)) {
+    if (signedTxn.length === 0) {
+      throw new Error('Signed transaction array is empty.');
+    }
+    console.log('📦 Signed transaction is array, normalizing first element');
     return normalizeSignedTxn(signedTxn[0]);
   }
 
+  // Handle object with blob property (base64 encoded)
   if (signedTxn.blob) {
-    return Uint8Array.from(Buffer.from(signedTxn.blob, 'base64'));
+    console.log('📦 Signed transaction has blob property');
+    try {
+      if (typeof signedTxn.blob === 'string') {
+        return Uint8Array.from(Buffer.from(signedTxn.blob, 'base64'));
+      } else if (signedTxn.blob instanceof Uint8Array) {
+        return signedTxn.blob;
+      }
+    } catch (err) {
+      console.error('❌ Error decoding blob:', err);
+      throw new Error(`Failed to decode blob: ${err.message}`);
+    }
   }
 
+  // Handle string (base64 encoded)
   if (typeof signedTxn === 'string') {
-    return Uint8Array.from(Buffer.from(signedTxn, 'base64'));
+    console.log('📦 Signed transaction is string, decoding from base64');
+    try {
+      return Uint8Array.from(Buffer.from(signedTxn, 'base64'));
+    } catch (err) {
+      console.error('❌ Error decoding string:', err);
+      throw new Error(`Failed to decode base64 string: ${err.message}`);
+    }
   }
 
+  // Handle object with signedTxn property
   if (signedTxn.signedTxn) {
-    return Uint8Array.from(Buffer.from(signedTxn.signedTxn, 'base64'));
+    console.log('📦 Signed transaction has signedTxn property');
+    return normalizeSignedTxn(signedTxn.signedTxn);
   }
 
-  throw new Error('Unsupported signed transaction format returned by wallet.');
+  // Handle object with txn property (nested transaction)
+  if (signedTxn.txn) {
+    console.log('📦 Signed transaction has txn property');
+    return normalizeSignedTxn(signedTxn.txn);
+  }
+
+  // Try to extract from common Pera Wallet response formats
+  if (typeof signedTxn === 'object') {
+    // Check if it's a response object with data
+    if (signedTxn.data) {
+      console.log('📦 Signed transaction has data property');
+      return normalizeSignedTxn(signedTxn.data);
+    }
+    
+    // Check if it has a stxn property (signed transaction)
+    if (signedTxn.stxn) {
+      console.log('📦 Signed transaction has stxn property');
+      return normalizeSignedTxn(signedTxn.stxn);
+    }
+
+    // Try to find any Uint8Array property
+    for (const key in signedTxn) {
+      if (signedTxn[key] instanceof Uint8Array) {
+        console.log(`📦 Found Uint8Array in property: ${key}`);
+        return signedTxn[key];
+      }
+    }
+  }
+
+  // Last resort: log the actual structure for debugging
+  console.error('❌ Unsupported signed transaction format:', {
+    type: typeof signedTxn,
+    constructor: signedTxn?.constructor?.name,
+    keys: signedTxn && typeof signedTxn === 'object' ? Object.keys(signedTxn) : null,
+    stringified: JSON.stringify(signedTxn, (key, value) => {
+      if (value instanceof Uint8Array) {
+        return `Uint8Array(${value.length})`;
+      }
+      return value;
+    }, 2)
+  });
+
+  throw new Error(`Unsupported signed transaction format returned by wallet. Type: ${typeof signedTxn}, Constructor: ${signedTxn?.constructor?.name}, Keys: ${signedTxn && typeof signedTxn === 'object' ? Object.keys(signedTxn).join(', ') : 'N/A'}`);
 };
 
 // Detect if user is on mobile or desktop
@@ -411,13 +492,46 @@ export const WalletProvider = ({ children }) => {
         }];
 
         // Sign single transaction using Pera Wallet
+        console.log('📤 Requesting signature from Pera Wallet...');
         const signedTxns = await peraWallet.signTransaction([txnToSign]);
+        console.log('📥 Received signed transactions from Pera Wallet:', {
+          type: typeof signedTxns,
+          isArray: Array.isArray(signedTxns),
+          length: Array.isArray(signedTxns) ? signedTxns.length : 'N/A',
+          firstElement: signedTxns?.[0],
+          firstElementType: typeof signedTxns?.[0],
+          firstElementIsArray: Array.isArray(signedTxns?.[0]),
+          nestedFirst: signedTxns?.[0]?.[0]
+        });
 
-        if (!signedTxns || signedTxns.length === 0 || signedTxns[0].length === 0) {
-          throw new Error('Wallet did not return a signed transaction.');
+        if (!signedTxns) {
+          throw new Error('Wallet did not return a signed transaction (null/undefined).');
         }
 
-        return normalizeSignedTxn(signedTxns[0][0]);
+        if (Array.isArray(signedTxns) && signedTxns.length === 0) {
+          throw new Error('Wallet returned an empty array.');
+        }
+
+        // Handle different response structures
+        let signedTxnToNormalize;
+        if (Array.isArray(signedTxns)) {
+          if (Array.isArray(signedTxns[0])) {
+            // Nested array: [[signedTxn]]
+            if (signedTxns[0].length === 0) {
+              throw new Error('Wallet returned an empty nested array.');
+            }
+            signedTxnToNormalize = signedTxns[0][0];
+          } else {
+            // Flat array: [signedTxn]
+            signedTxnToNormalize = signedTxns[0];
+          }
+        } else {
+          // Not an array - use directly
+          signedTxnToNormalize = signedTxns;
+        }
+
+        console.log('🔍 Normalizing signed transaction:', signedTxnToNormalize);
+        return normalizeSignedTxn(signedTxnToNormalize);
       } catch (error) {
         console.error('Failed to sign transaction:', error);
 

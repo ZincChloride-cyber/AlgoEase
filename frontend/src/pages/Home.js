@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
-const CONTRACT_APP_ID = parseInt(process.env.REACT_APP_CONTRACT_APP_ID, 10) || 749570296;
+const CONTRACT_APP_ID = parseInt(process.env.REACT_APP_CONTRACT_APP_ID, 10) || 749599170;
 
 const highlightStats = [
   { label: 'Avg settlement', value: '4.5s', detail: 'Payment confirmation on Algorand TestNet' },

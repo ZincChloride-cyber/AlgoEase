@@ -20,12 +20,14 @@ def load_env_file(filepath):
                     os.environ[key] = value
     return env_vars
 
+# Try loading from multiple locations
 load_env_file('frontend/.env')
+load_env_file('contract.env')
 
 # ---------------- CONFIG ----------------
 ALGOD_ADDRESS = "https://testnet-api.algonode.cloud"
 ALGOD_TOKEN = ""  # Algonode doesn't require a token
-CREATOR_MNEMONIC = os.getenv('REACT_APP_CREATOR_MNEMONIC')
+CREATOR_MNEMONIC = os.getenv('REACT_APP_CREATOR_MNEMONIC') or os.getenv('CREATOR_MNEMONIC')
 
 # Validate that mnemonic is loaded
 if not CREATOR_MNEMONIC:

@@ -177,7 +177,6 @@ def accept_bounty():
     """
     bounty_id = ScratchVar(TealType.uint64)
     box_name = ScratchVar(TealType.bytes)
-    box_value = App.box_get(get_bounty_box_name(Btoi(Txn.application_args[1])))
     box_data = ScratchVar(TealType.bytes)
     status = ScratchVar(TealType.uint64)
     deadline = ScratchVar(TealType.uint64)
@@ -191,8 +190,8 @@ def accept_bounty():
         box_name.store(get_bounty_box_name(bounty_id.load())),
         
         # Read box (check exists and get value)
-        Assert(box_value.hasValue()),
-        box_data.store(box_value.value()),
+        Assert(App.box_get(box_name.load()).hasValue()),
+        box_data.store(App.box_get(box_name.load()).value()),
         
         # Check status is OPEN
         status.store(Btoi(Extract(box_data.load(), STATUS_OFFSET, Int(1)))),
@@ -227,14 +226,18 @@ def accept_bounty():
 
 def approve_bounty():
     """
-    Approve bounty completion (verifier only).
+    Approve bounty completion (client or verifier).
+    Transfers funds directly to freelancer.
     Args: [method, bounty_id]
     """
     bounty_id = ScratchVar(TealType.uint64)
     box_name = ScratchVar(TealType.bytes)
-    box_value = App.box_get(get_bounty_box_name(Btoi(Txn.application_args[1])))
     box_data = ScratchVar(TealType.bytes)
     status = ScratchVar(TealType.uint64)
+    amount = ScratchVar(TealType.uint64)
+    freelancer = ScratchVar(TealType.bytes)
+    client = ScratchVar(TealType.bytes)
+    verifier = ScratchVar(TealType.bytes)
     
     return Seq([
         # Validate arguments
@@ -245,26 +248,49 @@ def approve_bounty():
         box_name.store(get_bounty_box_name(bounty_id.load())),
         
         # Read box
-        Assert(box_value.hasValue()),
-        box_data.store(box_value.value()),
+        Assert(App.box_get(box_name.load()).hasValue()),
+        box_data.store(App.box_get(box_name.load()).value()),
         
         # Check status is ACCEPTED
         status.store(Btoi(Extract(box_data.load(), STATUS_OFFSET, Int(1)))),
         Assert(status.load() == STATUS_ACCEPTED),
         
-        # Check caller is verifier
-        Assert(Txn.sender() == Extract(box_data.load(), VERIFIER_OFFSET, Int(32))),
+        # Get addresses
+        client.store(Extract(box_data.load(), CLIENT_OFFSET, Int(32))),
+        freelancer.store(Extract(box_data.load(), FREELANCER_OFFSET, Int(32))),
+        verifier.store(Extract(box_data.load(), VERIFIER_OFFSET, Int(32))),
+        
+        # Check caller is client OR verifier
+        Assert(Or(
+            Txn.sender() == client.load(),
+            Txn.sender() == verifier.load()
+        )),
+        
+        # Get amount
+        amount.store(Btoi(Extract(box_data.load(), AMOUNT_OFFSET, Int(8)))),
+        Assert(amount.load() > Int(0)),
+        
+        # Transfer funds directly to freelancer
+        InnerTxnBuilder.Begin(),
+        InnerTxnBuilder.SetFields({
+            TxnField.type_enum: TxnType.Payment,
+            TxnField.sender: Global.current_application_address(),
+            TxnField.receiver: freelancer.load(),
+            TxnField.amount: amount.load(),
+            TxnField.fee: Int(0),
+        }),
+        InnerTxnBuilder.Submit(),
         
         # Update box with new status
         App.box_put(
             box_name.load(),
             Concat(
-                Extract(box_data.load(), CLIENT_OFFSET, Int(32)),
-                Extract(box_data.load(), FREELANCER_OFFSET, Int(32)),
-                Extract(box_data.load(), VERIFIER_OFFSET, Int(32)),
+                client.load(),
+                freelancer.load(),
+                verifier.load(),
                 Extract(box_data.load(), AMOUNT_OFFSET, Int(8)),
                 Extract(box_data.load(), DEADLINE_OFFSET, Int(8)),
-                Itob(STATUS_APPROVED),  # new status
+                Itob(STATUS_CLAIMED),  # Set to CLAIMED since payment was sent
                 Extract(box_data.load(), TASK_DESC_OFFSET, Len(box_data.load()) - TASK_DESC_OFFSET)
             )
         ),
@@ -274,16 +300,16 @@ def approve_bounty():
 
 def reject_bounty():
     """
-    Reject bounty completion (verifier only) - refunds to client.
+    Reject bounty completion (client or verifier) - refunds to client.
     Args: [method, bounty_id]
     """
     bounty_id = ScratchVar(TealType.uint64)
     box_name = ScratchVar(TealType.bytes)
-    box_value = App.box_get(get_bounty_box_name(Btoi(Txn.application_args[1])))
     box_data = ScratchVar(TealType.bytes)
     status = ScratchVar(TealType.uint64)
     amount = ScratchVar(TealType.uint64)
     client = ScratchVar(TealType.bytes)
+    verifier = ScratchVar(TealType.bytes)
     
     return Seq([
         # Validate arguments
@@ -294,18 +320,24 @@ def reject_bounty():
         box_name.store(get_bounty_box_name(bounty_id.load())),
         
         # Read box
-        Assert(box_value.hasValue()),
-        box_data.store(box_value.value()),
+        Assert(App.box_get(box_name.load()).hasValue()),
+        box_data.store(App.box_get(box_name.load()).value()),
         
         # Check status is ACCEPTED
         status.store(Btoi(Extract(box_data.load(), STATUS_OFFSET, Int(1)))),
         Assert(status.load() == STATUS_ACCEPTED),
         
-        # Check caller is verifier
-        Assert(Txn.sender() == Extract(box_data.load(), VERIFIER_OFFSET, Int(32))),
-        
-        # Get client and amount
+        # Get addresses
         client.store(Extract(box_data.load(), CLIENT_OFFSET, Int(32))),
+        verifier.store(Extract(box_data.load(), VERIFIER_OFFSET, Int(32))),
+        
+        # Check caller is client OR verifier
+        Assert(Or(
+            Txn.sender() == client.load(),
+            Txn.sender() == verifier.load()
+        )),
+        
+        # Get amount
         amount.store(Btoi(Extract(box_data.load(), AMOUNT_OFFSET, Int(8)))),
         Assert(amount.load() > Int(0)),
         
@@ -326,7 +358,7 @@ def reject_bounty():
             Concat(
                 client.load(),
                 Extract(box_data.load(), FREELANCER_OFFSET, Int(32)),
-                Extract(box_data.load(), VERIFIER_OFFSET, Int(32)),
+                verifier.load(),
                 Extract(box_data.load(), AMOUNT_OFFSET, Int(8)),
                 Extract(box_data.load(), DEADLINE_OFFSET, Int(8)),
                 Itob(STATUS_REJECTED),  # new status (rejected)
@@ -344,7 +376,6 @@ def claim_bounty():
     """
     bounty_id = ScratchVar(TealType.uint64)
     box_name = ScratchVar(TealType.bytes)
-    box_value = App.box_get(get_bounty_box_name(Btoi(Txn.application_args[1])))
     box_data = ScratchVar(TealType.bytes)
     status = ScratchVar(TealType.uint64)
     amount = ScratchVar(TealType.uint64)
@@ -359,8 +390,8 @@ def claim_bounty():
         box_name.store(get_bounty_box_name(bounty_id.load())),
         
         # Read box
-        Assert(box_value.hasValue()),
-        box_data.store(box_value.value()),
+        Assert(App.box_get(box_name.load()).hasValue()),
+        box_data.store(App.box_get(box_name.load()).value()),
         
         # Check status is APPROVED
         status.store(Btoi(Extract(box_data.load(), STATUS_OFFSET, Int(1)))),
@@ -409,7 +440,6 @@ def refund_bounty():
     """
     bounty_id = ScratchVar(TealType.uint64)
     box_name = ScratchVar(TealType.bytes)
-    box_value = App.box_get(get_bounty_box_name(Btoi(Txn.application_args[1])))
     box_data = ScratchVar(TealType.bytes)
     status = ScratchVar(TealType.uint64)
     amount = ScratchVar(TealType.uint64)
@@ -425,8 +455,8 @@ def refund_bounty():
         box_name.store(get_bounty_box_name(bounty_id.load())),
         
         # Read box
-        Assert(box_value.hasValue()),
-        box_data.store(box_value.value()),
+        Assert(App.box_get(box_name.load()).hasValue()),
+        box_data.store(App.box_get(box_name.load()).value()),
         
         # Check status is not CLAIMED, REFUNDED, or REJECTED
         status.store(Btoi(Extract(box_data.load(), STATUS_OFFSET, Int(1)))),
@@ -486,7 +516,6 @@ def auto_refund():
     """
     bounty_id = ScratchVar(TealType.uint64)
     box_name = ScratchVar(TealType.bytes)
-    box_value = App.box_get(get_bounty_box_name(Btoi(Txn.application_args[1])))
     box_data = ScratchVar(TealType.bytes)
     status = ScratchVar(TealType.uint64)
     amount = ScratchVar(TealType.uint64)
@@ -502,8 +531,8 @@ def auto_refund():
         box_name.store(get_bounty_box_name(bounty_id.load())),
         
         # Read box
-        Assert(box_value.hasValue()),
-        box_data.store(box_value.value()),
+        Assert(App.box_get(box_name.load()).hasValue()),
+        box_data.store(App.box_get(box_name.load()).value()),
         
         # Check status is not CLAIMED, REFUNDED, or REJECTED
         status.store(Btoi(Extract(box_data.load(), STATUS_OFFSET, Int(1)))),

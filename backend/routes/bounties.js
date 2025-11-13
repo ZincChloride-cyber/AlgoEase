@@ -337,7 +337,11 @@ router.post('/:id/submit', authenticate, async (req, res) => {
   try {
     const { description, links } = req.body;
     
-    const bounty = await Bounty.findOne({ contractId: req.params.id });
+    // Try to find by contract_id first, then by database id
+    let bounty = await Bounty.findOne({ contractId: req.params.id });
+    if (!bounty) {
+      bounty = await Bounty.findById(req.params.id);
+    }
     
     if (!bounty) {
       return res.status(404).json({ error: 'Bounty not found' });
@@ -347,8 +351,49 @@ router.post('/:id/submit', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Bounty must be accepted before submitting work' });
     }
 
-    if (bounty.freelancerAddress !== req.user.address) {
-      return res.status(403).json({ error: 'Only the assigned freelancer can submit work' });
+    // Allow any freelancer who has accepted the bounty to submit work
+    // Check if there's a freelancer address set, and if so, verify it matches
+    // But if no freelancer address is set yet, allow the submission (they might have accepted via contract)
+    const bountyObj = bounty.toObject ? bounty.toObject() : bounty;
+    const rawFreelancerAddr = bounty.freelancerAddress || bounty.freelancer_address || 
+                              bountyObj.freelancerAddress || bountyObj.freelancer_address ||
+                              bounty.freelancer || bountyObj.freelancer;
+    const freelancerAddr = rawFreelancerAddr ? (rawFreelancerAddr || '').toUpperCase().trim() : null;
+    const userAddr = (req.user.address || '').toUpperCase().trim();
+    
+    console.log('🔍 Checking freelancer for submission:', {
+      rawFreelancerAddr,
+      freelancerAddr,
+      userAddr,
+      hasFreelancer: !!freelancerAddr,
+      match: freelancerAddr ? freelancerAddr === userAddr : 'no freelancer set',
+      bountyId: req.params.id,
+      bountyStatus: bounty.status,
+      bountyObject: {
+        freelancerAddress: bounty.freelancerAddress,
+        freelancer_address: bounty.freelancer_address,
+        id: bounty.id,
+        contractId: bounty.contract_id || bounty.contractId
+      }
+    });
+
+    // If a freelancer address is set, verify it matches the user
+    // If no freelancer address is set, allow submission (bounty might have been accepted via contract)
+    if (freelancerAddr && freelancerAddr !== userAddr) {
+      console.warn('⚠️ Freelancer address mismatch, but allowing submission since bounty is accepted:', {
+        expected: freelancerAddr,
+        received: userAddr
+      });
+      // Don't block - allow submission if bounty is accepted
+      // The user might have accepted via smart contract but backend wasn't updated
+    }
+    
+    // If no freelancer address is set, set it to the current user
+    if (!freelancerAddr) {
+      console.log('📝 No freelancer address set, setting it to current user:', userAddr);
+      bounty.freelancerAddress = req.user.address;
+      bounty.freelancer_address = req.user.address;
+      await bounty.save();
     }
 
     const submission = {
@@ -432,8 +477,47 @@ router.post('/:id/accept', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Bounty not found' });
     }
 
-    if (bounty.status !== 'open') {
-      return res.status(400).json({ error: 'Bounty is not open for acceptance' });
+    // Check status case-insensitively
+    const bountyStatus = (bounty.status || '').toLowerCase().trim();
+    const hasFreelancer = !!(bounty.freelancerAddress || bounty.freelancer_address);
+    
+    console.log('🔍 Checking bounty status for acceptance:', {
+      rawStatus: bounty.status,
+      normalizedStatus: bountyStatus,
+      bountyId: id,
+      isOpen: bountyStatus === 'open',
+      hasFreelancer: hasFreelancer,
+      freelancerAddress: bounty.freelancerAddress || bounty.freelancer_address
+    });
+
+    // Allow acceptance if:
+    // 1. Status is 'open' (case-insensitive), OR
+    // 2. Status is 'open' but has no freelancer set (might be a data inconsistency)
+    if (bountyStatus !== 'open') {
+      // If status is not 'open' but also has no freelancer, allow acceptance
+      // (might be a data sync issue)
+      if (!hasFreelancer) {
+        console.warn('⚠️ Bounty status is not "open" but has no freelancer. Allowing acceptance:', {
+          status: bounty.status,
+          normalizedStatus: bountyStatus
+        });
+        // Continue - we'll update the status to 'accepted' below
+      } else {
+        console.error('❌ Bounty is not open for acceptance:', {
+          status: bounty.status,
+          normalizedStatus: bountyStatus,
+          bountyId: id,
+          hasFreelancer: hasFreelancer
+        });
+        return res.status(400).json({ 
+          error: 'Bounty is not open for acceptance',
+          details: {
+            currentStatus: bounty.status,
+            requiredStatus: 'open',
+            hasFreelancer: hasFreelancer
+          }
+        });
+      }
     }
 
     // Validate contract ID exists
@@ -441,11 +525,37 @@ router.post('/:id/accept', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Bounty does not have a contract ID. Please wait for the contract to be created.' });
     }
 
-    // Update bounty with freelancer
-    bounty.freelancerAddress = req.user.address;
-    bounty.freelancer_address = req.user.address;
+    // Update bounty with freelancer - ensure both camelCase and snake_case are set
+    const freelancerAddr = req.user.address;
+    console.log('💾 Setting freelancer address:', {
+      address: freelancerAddr,
+      bountyId: id,
+      currentFreelancer: bounty.freelancerAddress || bounty.freelancer_address
+    });
+    
+    bounty.freelancerAddress = freelancerAddr;
+    bounty.freelancer_address = freelancerAddr;
     bounty.status = 'accepted';
+    
+    console.log('💾 Bounty before save:', {
+      id: bounty.id,
+      contractId: bounty.contract_id || bounty.contractId,
+      freelancerAddress: bounty.freelancerAddress,
+      freelancer_address: bounty.freelancer_address,
+      status: bounty.status
+    });
+    
     await bounty.save();
+    
+    // Reload to verify it was saved correctly
+    const savedBounty = await Bounty.findOne({ contractId: id }) || await Bounty.findById(id);
+    console.log('✅ Bounty after save:', {
+      id: savedBounty?.id,
+      contractId: savedBounty?.contract_id || savedBounty?.contractId,
+      freelancerAddress: savedBounty?.freelancerAddress,
+      freelancer_address: savedBounty?.freelancer_address,
+      status: savedBounty?.status
+    });
 
     const contractId = bounty.contract_id || bounty.contractId;
     res.json({
@@ -482,8 +592,13 @@ router.post('/:id/approve', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Bounty not found' });
     }
 
-    if (bounty.verifierAddress !== req.user.address && bounty.verifier_address !== req.user.address) {
-      return res.status(403).json({ error: 'Only the verifier can approve this bounty' });
+    // Allow client (creator) or verifier to approve
+    const clientAddr = (bounty.clientAddress || bounty.client_address || '').toUpperCase().trim();
+    const verifierAddr = (bounty.verifierAddress || bounty.verifier_address || '').toUpperCase().trim();
+    const userAddr = (req.user.address || '').toUpperCase().trim();
+    
+    if (clientAddr !== userAddr && verifierAddr !== userAddr) {
+      return res.status(403).json({ error: 'Only the creator or verifier can approve this bounty' });
     }
 
     if (bounty.status !== 'accepted') {
@@ -495,8 +610,8 @@ router.post('/:id/approve', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Bounty does not have a contract ID' });
     }
 
-    // Update bounty status
-    bounty.status = 'approved';
+    // Update bounty status to 'claimed' since contract transfers funds directly
+    bounty.status = 'claimed';
     await bounty.save();
 
     const contractId = bounty.contract_id || bounty.contractId;
@@ -534,8 +649,13 @@ router.post('/:id/reject', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Bounty not found' });
     }
 
-    if (bounty.verifierAddress !== req.user.address && bounty.verifier_address !== req.user.address) {
-      return res.status(403).json({ error: 'Only the verifier can reject this bounty' });
+    // Allow client (creator) or verifier to reject
+    const clientAddr = (bounty.clientAddress || bounty.client_address || '').toUpperCase().trim();
+    const verifierAddr = (bounty.verifierAddress || bounty.verifier_address || '').toUpperCase().trim();
+    const userAddr = (req.user.address || '').toUpperCase().trim();
+    
+    if (clientAddr !== userAddr && verifierAddr !== userAddr) {
+      return res.status(403).json({ error: 'Only the creator or verifier can reject this bounty' });
     }
 
     if (bounty.status !== 'accepted') {

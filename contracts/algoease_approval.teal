@@ -366,8 +366,13 @@ int 1
 assert
 txn Sender
 load 16
+extract 0 32
+==
+txn Sender
+load 16
 extract 64 32
 ==
+||
 assert
 load 16
 extract 0 32
@@ -449,9 +454,37 @@ int 1
 assert
 txn Sender
 load 11
+extract 0 32
+==
+txn Sender
+load 11
 extract 64 32
 ==
+||
 assert
+load 11
+extract 32 32
+store 14
+load 11
+extract 96 8
+btoi
+store 15
+load 15
+int 0
+>
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 14
+itxn_field Receiver
+load 15
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
 load 10
 load 11
 extract 0 32
@@ -467,7 +500,7 @@ concat
 load 11
 extract 104 8
 concat
-int 2
+int 3
 itob
 concat
 load 11

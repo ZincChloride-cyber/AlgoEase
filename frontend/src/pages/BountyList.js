@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import apiService from '../utils/api';
 
@@ -21,11 +21,13 @@ const filters = [
 ];
 
 const BountyList = () => {
-  const { account } = useWallet();
+  const { account, isConnected, acceptBounty } = useWallet();
+  const navigate = useNavigate();
   const [bounties, setBounties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState('');
+  const [acceptingBountyId, setAcceptingBountyId] = useState(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -194,6 +196,121 @@ const BountyList = () => {
 
   const formatAddress = (address) => (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '');
 
+  const handleAcceptBounty = async (bounty) => {
+    console.log('🚀 handleAcceptBounty called with:', bounty);
+    console.log('🚀 Current state:', { isConnected, account, acceptingBountyId });
+    
+    if (!isConnected || !account) {
+      console.warn('⚠️ Wallet not connected');
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    if (account === bounty.client) {
+      console.warn('⚠️ User trying to accept their own bounty');
+      alert('You cannot accept your own bounty');
+      return;
+    }
+
+    // Use contractId for API call, fallback to databaseId or id
+    const apiBountyId = bounty.contractId || bounty.databaseId || bounty.id;
+    if (!apiBountyId) {
+      alert('Bounty ID is missing. Please refresh the page.');
+      return;
+    }
+
+    // Contract requires numeric contractId
+    const contractBountyId = bounty.contractId ? parseInt(bounty.contractId) : null;
+    if (!contractBountyId || isNaN(contractBountyId)) {
+      alert('This bounty does not have a valid contract ID. It may not have been deployed to the smart contract yet.');
+      return;
+    }
+
+    try {
+      setAcceptingBountyId(apiBountyId);
+      
+      // Set auth token for API call (wallet address as Bearer token)
+      const originalToken = apiService.getAuthToken();
+      apiService.setAuthToken(account);
+      
+      try {
+        // First update backend - use the ID that works for API (contractId or databaseId)
+        console.log('📤 Calling API to accept bounty with ID:', apiBountyId);
+        await apiService.acceptBounty(apiBountyId);
+        console.log('✅ Backend updated successfully');
+      } catch (apiError) {
+        console.error('❌ API error:', apiError);
+        throw new Error(`Failed to update backend: ${apiError.message || 'Unknown error'}`);
+      } finally {
+        // Restore original token
+        if (originalToken) {
+          apiService.setAuthToken(originalToken);
+        } else {
+          apiService.removeAuthToken();
+        }
+      }
+      
+      // Then call contract - use numeric contractId
+      console.log('📤 Calling smart contract to accept bounty with contract ID:', contractBountyId);
+      const txId = await acceptBounty(contractBountyId);
+      console.log('✅ Contract transaction successful:', txId);
+      
+      alert(`Bounty accepted successfully! Transaction ID: ${txId}\n\nYou will be redirected to the bounty details page.`);
+      
+      // Navigate to detail page first
+      navigate(`/bounty/${apiBountyId}`);
+      
+      // Refresh bounties list in background
+      const response = await apiService.getBounties({
+        status: filter !== 'all' ? filter : undefined,
+        page: 1,
+        limit: 100,
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      });
+
+      let bountiesArray = [];
+      if (response && Array.isArray(response.bounties)) {
+        bountiesArray = response.bounties;
+      } else if (Array.isArray(response)) {
+        bountiesArray = response;
+      } else if (response && response.value && Array.isArray(response.value)) {
+        bountiesArray = response.value;
+      } else if (response && response.data && Array.isArray(response.data)) {
+        bountiesArray = response.data;
+      }
+
+      const transformedBounties = bountiesArray.map((b, index) => {
+        let displayId = b.contractId;
+        if (displayId === null || displayId === undefined || displayId === '') {
+          displayId = b.id || b._id || `db-${index}`;
+        }
+        
+        return {
+          id: String(displayId),
+          contractId: b.contractId ? String(b.contractId) : null,
+          databaseId: b.id || b._id,
+          title: b.title || 'Untitled Bounty',
+          description: b.description || '',
+          amount: typeof b.amount === 'number' ? b.amount : parseFloat(b.amount) || 0,
+          deadline: b.deadline,
+          status: (b.status || 'open').toLowerCase(),
+          client: b.clientAddress || b.client_address,
+          freelancer: b.freelancerAddress || b.freelancer_address,
+          verifier: b.verifierAddress || b.verifier_address,
+          createdAt: b.createdAt || b.created_at || new Date().toISOString(),
+        };
+      });
+
+      setBounties(transformedBounties);
+    } catch (error) {
+      console.error('Failed to accept bounty:', error);
+      alert(`Failed to accept bounty: ${error.message || 'Unknown error'}`);
+    } finally {
+      setAcceptingBountyId(null);
+    }
+  };
+
   return (
     <div className="space-y-10">
       <header className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
@@ -303,20 +420,47 @@ const BountyList = () => {
                       </p>
                       <p className="text-xs text-white/45">Locked in escrow</p>
                     </div>
-                    <div className="flex flex-col gap-2 md:flex-row">
+                    <div className="flex flex-col gap-2 md:flex-row" style={{ position: 'relative', zIndex: 10 }}>
                       <Link 
                         to={`/bounty/${bounty.contractId || bounty.databaseId || bounty.id}`} 
                         className="btn-outline text-sm"
+                        style={{ position: 'relative', zIndex: 11, cursor: 'pointer' }}
+                        onClick={(e) => {
+                          console.log('🔗 View details clicked for bounty:', bounty.id, bounty.contractId);
+                          const targetId = bounty.contractId || bounty.databaseId || bounty.id;
+                          console.log('🔗 Navigating to:', `/bounty/${targetId}`);
+                          // Don't prevent default - let Link handle navigation
+                        }}
                       >
                         View details
                       </Link>
                       {bounty.status === 'open' && account && account !== bounty.client && (
-                        <Link 
-                          to={`/bounty/${bounty.contractId || bounty.databaseId || bounty.id}`}
-                          className="btn-primary text-sm"
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('✅ Accept bounty button clicked for:', bounty);
+                            console.log('✅ Button state:', { 
+                              disabled: acceptingBountyId === (bounty.contractId || bounty.databaseId || bounty.id),
+                              acceptingBountyId,
+                              bountyId: bounty.contractId || bounty.databaseId || bounty.id
+                            });
+                            if (!acceptingBountyId) {
+                              handleAcceptBounty(bounty);
+                            }
+                          }}
+                          disabled={acceptingBountyId === (bounty.contractId || bounty.databaseId || bounty.id)}
+                          className="btn-primary text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{ 
+                            position: 'relative', 
+                            zIndex: 11, 
+                            cursor: acceptingBountyId === (bounty.contractId || bounty.databaseId || bounty.id) ? 'not-allowed' : 'pointer',
+                            pointerEvents: acceptingBountyId === (bounty.contractId || bounty.databaseId || bounty.id) ? 'none' : 'auto'
+                          }}
                         >
-                          Accept bounty
-                        </Link>
+                          {acceptingBountyId === (bounty.contractId || bounty.databaseId || bounty.id) ? 'Accepting...' : 'Accept bounty'}
+                        </button>
                       )}
                     </div>
                     <p className="text-xs text-white/40">Created {formatDate(bounty.createdAt)}</p>
