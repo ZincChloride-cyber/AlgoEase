@@ -7,7 +7,11 @@ const validateBounty = (req, res, next) => {
     description: Joi.string().max(5000).required(),
     amount: Joi.number().min(0.001).required(),
     deadline: Joi.date().greater('now').required(),
+    clientAddress: Joi.string().pattern(/^[A-Z2-7]{58}$/).optional(),
     verifierAddress: Joi.string().pattern(/^[A-Z2-7]{58}$/).optional(),
+    contractId: Joi.alternatives().try(Joi.string(), Joi.number()).optional(),
+    transactionId: Joi.string().optional(),
+    status: Joi.string().valid('open', 'accepted', 'approved', 'claimed', 'refunded', 'rejected').optional(),
     requirements: Joi.array().items(Joi.string().max(500)).optional(),
     tags: Joi.array().items(Joi.string().max(50)).optional()
   });

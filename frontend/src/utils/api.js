@@ -59,9 +59,15 @@ class ApiService {
     }
   }
 
-  // Health check
+  // Health check (note: health endpoint is not under /api prefix)
   async healthCheck() {
-    return this.request('/health');
+    const baseUrl = this.baseURL.replace('/api', '');
+    const url = `${baseUrl}/health`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Health check failed: ${response.status}`);
+    }
+    return response.json();
   }
 
   // Bounty endpoints

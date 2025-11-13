@@ -215,6 +215,7 @@ const CreateBounty = () => {
           description: formData.description,
           amount: parseFloat(formData.amount),
           deadline: new Date(formData.deadline).toISOString(),
+          clientAddress: account, // Explicitly send wallet address
           verifierAddress: verifierAddress,
           contractId: bountyId !== null ? String(bountyId) : undefined, // Let backend set it if we don't have it
           transactionId: txId,

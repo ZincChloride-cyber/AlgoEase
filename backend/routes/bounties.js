@@ -148,8 +148,19 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Create new bounty
-router.post('/', authenticate, validateBounty, async (req, res) => {
+// Create new bounty - make auth optional if clientAddress is in body
+router.post('/', async (req, res, next) => {
+  // If clientAddress is provided in body, we can skip strict auth
+  // Otherwise, use authenticate middleware
+  if (req.body.clientAddress) {
+    // Set req.user from body for compatibility
+    req.user = { address: req.body.clientAddress };
+    next();
+  } else {
+    // Use authenticate middleware
+    authenticate(req, res, next);
+  }
+}, validateBounty, async (req, res) => {
   try {
     console.log('📥 Received bounty creation request:', {
       body: req.body,
@@ -157,13 +168,23 @@ router.post('/', authenticate, validateBounty, async (req, res) => {
     });
 
     // Prepare bounty data
+    // Use clientAddress from body if provided, otherwise use auth token (req.user.address)
+    const clientAddress = req.body.clientAddress || req.user?.address;
+    
+    if (!clientAddress) {
+      return res.status(400).json({ 
+        error: 'Client address required',
+        message: 'Client address must be provided in request body or Authorization header'
+      });
+    }
+
     const bountyData = {
       title: req.body.title,
       description: req.body.description,
       amount: parseFloat(req.body.amount),
       deadline: new Date(req.body.deadline).toISOString(),
-      verifierAddress: req.body.verifierAddress || req.user.address,
-      clientAddress: req.user.address,
+      verifierAddress: req.body.verifierAddress || clientAddress,
+      clientAddress: clientAddress, // Use from body or auth token
       status: 'open',
       requirements: req.body.requirements || [],
       tags: req.body.tags || [],

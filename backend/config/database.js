@@ -28,7 +28,9 @@ const connectDB = async () => {
       console.log('✓ Database connection test successful');
     }
 
-    console.log(`📦 Supabase Connected: ${supabaseUrl}`);
+    console.log(`📦 Supabase Connected (API URL: ${supabaseUrl})`);
+    console.log(`💡 Note: The URL above is for API access only, not a web page you can visit in a browser.`);
+    console.log(`   To access your Supabase dashboard, visit: https://app.supabase.com`);
     return supabase;
   } catch (error) {
     console.error('❌ Supabase connection error:', error.message);
