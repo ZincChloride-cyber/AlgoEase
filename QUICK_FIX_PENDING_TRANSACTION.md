@@ -39,3 +39,4 @@ Pera Wallet only allows one transaction at a time. If a previous transaction is 
 
 
 
+
