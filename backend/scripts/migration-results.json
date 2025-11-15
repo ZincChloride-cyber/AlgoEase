@@ -1,0 +1,148 @@
+{
+  "timestamp": "2025-11-15T16:42:24.841Z",
+  "summary": {
+    "total": 7,
+    "onOldContract": 0,
+    "onNewContract": 0,
+    "noContractId": 0,
+    "notFound": 7,
+    "mismatch": 0,
+    "invalidContractId": 0
+  },
+  "results": [
+    {
+      "bountyId": "358c83e2-7138-4eed-b10b-b603cbca068f",
+      "contractId": 1,
+      "dbClientAddress": "3AU6XYBNSEW7DRXJVNTGDAZLUYL54CTW3BUYKTBN6LX76KJ3EAVIQLPEBI",
+      "dbAmount": 1,
+      "dbStatus": "submitted",
+      "oldContract": {
+        "appId": 749696699,
+        "exists": false
+      },
+      "newContract": {
+        "appId": 749702537,
+        "exists": false
+      },
+      "status": "NOT_FOUND",
+      "message": "Box does not exist on either contract",
+      "contractLocation": null
+    },
+    {
+      "bountyId": "fe047f78-38bf-498a-873d-d1614bf7757a",
+      "contractId": 5,
+      "dbClientAddress": "3AU6XYBNSEW7DRXJVNTGDAZLUYL54CTW3BUYKTBN6LX76KJ3EAVIQLPEBI",
+      "dbAmount": 1,
+      "dbStatus": "submitted",
+      "oldContract": {
+        "appId": 749696699,
+        "exists": false
+      },
+      "newContract": {
+        "appId": 749702537,
+        "exists": false
+      },
+      "status": "NOT_FOUND",
+      "message": "Box does not exist on either contract",
+      "contractLocation": null
+    },
+    {
+      "bountyId": "dd2978a1-a5d1-46dc-b74d-15df268327c7",
+      "contractId": 2,
+      "dbClientAddress": "3AU6XYBNSEW7DRXJVNTGDAZLUYL54CTW3BUYKTBN6LX76KJ3EAVIQLPEBI",
+      "dbAmount": 1,
+      "dbStatus": "accepted",
+      "oldContract": {
+        "appId": 749696699,
+        "exists": false
+      },
+      "newContract": {
+        "appId": 749702537,
+        "exists": false
+      },
+      "status": "NOT_FOUND",
+      "message": "Box does not exist on either contract",
+      "contractLocation": null
+    },
+    {
+      "bountyId": "22c92e83-fff0-49c8-9e9b-78c989161268",
+      "contractId": 0,
+      "dbClientAddress": "3AU6XYBNSEW7DRXJVNTGDAZLUYL54CTW3BUYKTBN6LX76KJ3EAVIQLPEBI",
+      "dbAmount": 1,
+      "dbStatus": "submitted",
+      "oldContract": {
+        "appId": 749696699,
+        "exists": false
+      },
+      "newContract": {
+        "appId": 749702537,
+        "exists": false
+      },
+      "status": "NOT_FOUND",
+      "message": "Box does not exist on either contract",
+      "contractLocation": null
+    },
+    {
+      "bountyId": "1f202751-75cd-4fd3-a666-1f24fd006a8f",
+      "contractId": 3,
+      "dbClientAddress": "SOCQWOJTR5R3PDRVKGQZHSTC33SBK6NKMWIU6INGD3GRNIOEH7Q63IAURM",
+      "dbAmount": 1,
+      "dbStatus": "submitted",
+      "oldContract": {
+        "appId": 749696699,
+        "exists": false
+      },
+      "newContract": {
+        "appId": 749702537,
+        "exists": false
+      },
+      "status": "NOT_FOUND",
+      "message": "Box does not exist on either contract",
+      "contractLocation": null
+    },
+    {
+      "bountyId": "6836dce4-b957-4f9c-bc5c-3f5f321437a5",
+      "contractId": 4,
+      "dbClientAddress": "SOCQWOJTR5R3PDRVKGQZHSTC33SBK6NKMWIU6INGD3GRNIOEH7Q63IAURM",
+      "dbAmount": 1,
+      "dbStatus": "submitted",
+      "oldContract": {
+        "appId": 749696699,
+        "exists": false
+      },
+      "newContract": {
+        "appId": 749702537,
+        "exists": false
+      },
+      "status": "NOT_FOUND",
+      "message": "Box does not exist on either contract",
+      "contractLocation": null
+    },
+    {
+      "bountyId": "65d3d93b-ae0c-4e76-8ff6-80dc64682ac8",
+      "contractId": 6,
+      "dbClientAddress": "3AU6XYBNSEW7DRXJVNTGDAZLUYL54CTW3BUYKTBN6LX76KJ3EAVIQLPEBI",
+      "dbAmount": 1,
+      "dbStatus": "submitted",
+      "oldContract": {
+        "appId": 749696699,
+        "exists": false
+      },
+      "newContract": {
+        "appId": 749702537,
+        "exists": false
+      },
+      "status": "NOT_FOUND",
+      "message": "Box does not exist on either contract",
+      "contractLocation": null
+    }
+  ],
+  "contracts": {
+    "old": {
+      "appId": 749696699
+    },
+    "new": {
+      "appId": 749702537
+    }
+  }
+}

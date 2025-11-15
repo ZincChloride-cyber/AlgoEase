@@ -2,6 +2,10 @@ const { createClient } = require('@supabase/supabase-js');
 
 let supabase = null;
 
+/**
+ * Connect to Supabase database
+ * @returns {Promise<Object>} Supabase client instance
+ */
 const connectDB = async () => {
   try {
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -21,7 +25,8 @@ const connectDB = async () => {
     // Test connection by querying a table
     const { data, error } = await supabase.from('bounties').select('id').limit(1);
     
-    if (error && error.code !== 'PGRST116') { // PGRST116 is "relation does not exist" - table might not be created yet
+    if (error && error.code !== 'PGRST116') { 
+      // PGRST116 is "relation does not exist" - table might not be created yet
       console.warn('⚠️  Supabase connection warning:', error.message);
       console.log('📝 Note: Make sure to run the SQL migration to create the tables.');
     } else {
@@ -31,6 +36,7 @@ const connectDB = async () => {
     console.log(`📦 Supabase Connected (API URL: ${supabaseUrl})`);
     console.log(`💡 Note: The URL above is for API access only, not a web page you can visit in a browser.`);
     console.log(`   To access your Supabase dashboard, visit: https://app.supabase.com`);
+    
     return supabase;
   } catch (error) {
     console.error('❌ Supabase connection error:', error.message);
@@ -38,6 +44,11 @@ const connectDB = async () => {
   }
 };
 
+/**
+ * Get Supabase client instance
+ * @returns {Object} Supabase client instance
+ * @throws {Error} If database is not connected
+ */
 const getSupabase = () => {
   if (!supabase) {
     throw new Error('Supabase client not initialized. Call connectDB() first.');
@@ -46,4 +57,3 @@ const getSupabase = () => {
 };
 
 module.exports = { connectDB, getSupabase };
-

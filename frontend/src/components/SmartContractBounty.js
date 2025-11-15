@@ -4,9 +4,9 @@ import contractUtils, { BOUNTY_STATUS } from '../utils/contractUtils';
 const statusStyles = {
   [BOUNTY_STATUS.OPEN]: { label: 'Open', badge: 'bg-gradient-to-r from-secondary-400/25 to-secondary-500/40 text-secondary-100 border border-secondary-300/40' },
   [BOUNTY_STATUS.ACCEPTED]: { label: 'Accepted', badge: 'bg-gradient-to-r from-primary-500/20 to-primary-600/40 text-primary-100 border border-primary-300/40' },
+  [BOUNTY_STATUS.SUBMITTED]: { label: 'Submitted', badge: 'bg-gradient-to-r from-blue-500/20 to-blue-600/40 text-blue-100 border border-blue-300/40' },
   [BOUNTY_STATUS.APPROVED]: { label: 'Approved', badge: 'bg-gradient-to-r from-accent-400/25 to-accent-500/45 text-accent-50 border border-accent-300/40' },
-  [BOUNTY_STATUS.CLAIMED]: { label: 'Claimed', badge: 'bg-white/10 text-white/80 border border-white/20' },
-  [BOUNTY_STATUS.REFUNDED]: { label: 'Refunded', badge: 'bg-red-500/20 text-red-100 border border-red-400/40' },
+  [BOUNTY_STATUS.REJECTED]: { label: 'Rejected', badge: 'bg-orange-500/20 text-orange-100 border border-orange-400/40' },
 };
 
 const actions = {
@@ -15,26 +15,23 @@ const actions = {
     buttonClass: 'btn-primary',
     handler: (address) => contractUtils.acceptBounty(address),
   },
+  submit: {
+    label: 'Submit work',
+    buttonClass: 'btn-primary',
+    handler: (address) => contractUtils.submitBounty(address),
+  },
   approve: {
     label: 'Approve work',
     buttonClass: 'btn-primary',
     handler: (address) => contractUtils.approveBounty(address),
   },
-  claim: {
-    label: 'Claim payout',
-    buttonClass: 'btn-secondary',
-    handler: (address) => contractUtils.claimBounty(address),
-  },
-  refund: {
-    label: 'Trigger refund',
+  reject: {
+    label: 'Reject work',
     buttonClass: 'btn-outline',
-    handler: (address) => contractUtils.refundBounty(address),
+    handler: (address) => contractUtils.rejectBounty(address),
   },
-  auto_refund: {
-    label: 'Auto refund',
-    buttonClass: 'btn-outline',
-    handler: (address) => contractUtils.autoRefundBounty(address),
-  },
+  // Note: V2 contract doesn't have claim/refund actions
+  // Funds transfer automatically on approve/reject
 };
 
 const SmartContractBounty = ({ bounty, userAddress, onUpdate }) => {
@@ -63,8 +60,8 @@ const SmartContractBounty = ({ bounty, userAddress, onUpdate }) => {
       status: contractState.status,
       clientAddress: contractState.client_addr,
       freelancerAddress: contractState.freelancer_addr,
-      verifierAddress: contractState.verifier_addr,
-      deadline: new Date((contractState.deadline || 0) * 1000),
+      verifierAddress: null, // New contract doesn't have verifier - creator only
+      deadline: null, // New contract doesn't have deadline
     };
   }, [contractState]);
 
@@ -140,28 +137,12 @@ const SmartContractBounty = ({ bounty, userAddress, onUpdate }) => {
 
       <div className="mt-8 grid gap-4 text-sm text-white/65 md:grid-cols-2">
         <div className="glass-panel rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p className="text-xs uppercase tracking-[0.32em] text-white/40">Deadline</p>
-          <p className="mt-2 text-white">
-            {new Date(contractState.deadline * 1000).toLocaleString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
-          </p>
-        </div>
-        <div className="glass-panel rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p className="text-xs uppercase tracking-[0.32em] text-white/40">Client</p>
+          <p className="text-xs uppercase tracking-[0.32em] text-white/40">Creator</p>
           <p className="mt-2 text-white">{formatAddress(contractState.client_addr)}</p>
         </div>
         <div className="glass-panel rounded-2xl border border-white/10 bg-white/5 p-4">
           <p className="text-xs uppercase tracking-[0.32em] text-white/40">Freelancer</p>
           <p className="mt-2 text-white">{formatAddress(contractState.freelancer_addr)}</p>
-        </div>
-        <div className="glass-panel rounded-2xl border border-white/10 bg-white/5 p-4">
-          <p className="text-xs uppercase tracking-[0.32em] text-white/40">Verifier</p>
-          <p className="mt-2 text-white">{formatAddress(contractState.verifier_addr)}</p>
         </div>
       </div>
 

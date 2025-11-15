@@ -46,7 +46,7 @@ byte "reject_bounty"
 ==
 bnz main_l19
 txna ApplicationArgs 0
-byte "claim_bounty"
+byte "claim"
 ==
 bnz main_l18
 txna ApplicationArgs 0

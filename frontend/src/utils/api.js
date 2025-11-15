@@ -53,8 +53,20 @@ class ApiService {
         throw error;
       }
 
-      const data = await response.json();
-      console.log('✅ API response received:', data);
+      let data;
+      const text = await response.text();
+      if (!text) {
+        console.warn('⚠️ Empty response body');
+        return null;
+      }
+      try {
+        data = JSON.parse(text);
+        console.log('✅ API response received:', data);
+      } catch (parseError) {
+        console.error('❌ Failed to parse JSON response:', parseError);
+        console.error('❌ Response text:', text);
+        throw new Error('Invalid JSON response from server');
+      }
       return data;
     } catch (error) {
       console.error(`❌ API request failed for ${endpoint}:`, error);
@@ -89,7 +101,63 @@ class ApiService {
     const queryString = new URLSearchParams(cleanParams).toString();
     const endpoint = queryString ? `/bounties?${queryString}` : '/bounties';
     console.log('🔍 getBounties called with params:', params, '-> cleaned:', cleanParams, '-> endpoint:', endpoint);
-    return this.request(endpoint);
+    
+    try {
+      const response = await this.request(endpoint);
+      // Ensure response has the expected format
+      if (response && typeof response === 'object') {
+        // If response has bounties array, return as-is
+        if (Array.isArray(response.bounties)) {
+          return response;
+        }
+        // If response is directly an array, wrap it
+        if (Array.isArray(response)) {
+          return {
+            bounties: response,
+            pagination: {
+              page: 1,
+              limit: response.length,
+              total: response.length,
+              pages: 1
+            }
+          };
+        }
+        // If response has data array, convert it
+        if (Array.isArray(response.data)) {
+          return {
+            bounties: response.data,
+            pagination: response.pagination || {
+              page: 1,
+              limit: response.data.length,
+              total: response.data.length,
+              pages: 1
+            }
+          };
+        }
+      }
+      // Default: return empty array
+      return {
+        bounties: [],
+        pagination: {
+          page: 1,
+          limit: 10,
+          total: 0,
+          pages: 0
+        }
+      };
+    } catch (error) {
+      console.error('❌ Error in getBounties:', error);
+      // Return empty array on error to prevent frontend crashes
+      return {
+        bounties: [],
+        pagination: {
+          page: 1,
+          limit: 10,
+          total: 0,
+          pages: 0
+        }
+      };
+    }
   }
 
   async getBounty(id) {
@@ -97,10 +165,36 @@ class ApiService {
   }
 
   async createBounty(bountyData) {
-    return this.request('/bounties', {
-      method: 'POST',
-      body: JSON.stringify(bountyData),
+    console.log('📤 [apiService.createBounty] Creating bounty with data:', {
+      title: bountyData.title,
+      amount: bountyData.amount,
+      clientAddress: bountyData.clientAddress,
+      contractId: bountyData.contractId,
+      hasTransactionId: !!bountyData.transactionId
     });
+    
+    try {
+      const result = await this.request('/bounties', {
+        method: 'POST',
+        body: JSON.stringify(bountyData),
+      });
+      
+      console.log('✅ [apiService.createBounty] Bounty created successfully:', {
+        id: result.id,
+        contractId: result.contractId,
+        status: result.status
+      });
+      
+      return result;
+    } catch (error) {
+      console.error('❌ [apiService.createBounty] Failed to create bounty:', error);
+      console.error('❌ [apiService.createBounty] Error details:', {
+        message: error.message,
+        status: error.status,
+        response: error.response
+      });
+      throw error;
+    }
   }
 
   async updateBounty(id, updateData) {
@@ -151,12 +245,17 @@ class ApiService {
     });
   }
 
-  async updateBountyTransaction(bountyId, transactionId, action) {
-    console.log('📤 Updating bounty transaction:', { bountyId, transactionId, action });
+  async updateBountyTransaction(bountyId, transactionId, action, contractId = null) {
+    console.log('📤 Updating bounty transaction:', { bountyId, transactionId, action, contractId });
     try {
+      const body = { transactionId, action };
+      // Include contractId if provided (especially for 'create' action)
+      if (contractId !== null && contractId !== undefined) {
+        body.contractId = contractId;
+      }
       const response = await this.request(`/bounties/${bountyId}/transaction`, {
         method: 'PATCH',
-        body: JSON.stringify({ transactionId, action }),
+        body: JSON.stringify(body),
       });
       console.log('✅ Transaction ID update response:', response);
       return response;

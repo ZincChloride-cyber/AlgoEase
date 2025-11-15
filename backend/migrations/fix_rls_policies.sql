@@ -52,3 +52,5 @@ CREATE POLICY "Allow update by client" ON bounties
 
 
 
+
+

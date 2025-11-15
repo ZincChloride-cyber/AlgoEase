@@ -16,9 +16,9 @@ ALTER TABLE bounties ALTER COLUMN contract_id DROP NOT NULL;
 -- Drop the existing check constraint (if it exists)
 ALTER TABLE bounties DROP CONSTRAINT IF EXISTS bounties_status_check;
 
--- Add the new check constraint with 'rejected' status
+-- Add the new check constraint with 'rejected' and 'submitted' status (V5 contract)
 ALTER TABLE bounties ADD CONSTRAINT bounties_status_check 
-  CHECK (status IN ('open', 'accepted', 'approved', 'claimed', 'refunded', 'rejected'));
+  CHECK (status IN ('open', 'accepted', 'submitted', 'approved', 'claimed', 'refunded', 'rejected'));
 
 -- Verify the migration
 -- You can run this query to check the table structure:

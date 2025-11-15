@@ -1,0 +1,10 @@
+{
+  "appId": 749702537,
+  "appAddress": "M4RDVCJZ3KESIMZB6V4Z2ZMWPTQ4SOWDPBMXNPHFHSYSVOILAPIIDBXN3Q",
+  "network": "testnet",
+  "version": "bounty_escrow",
+  "deployedAt": "2025-11-15T21:10:34.160372",
+  "creator": "3AU6XYBNSEW7DRXJVNTGDAZLUYL54CTW3BUYKTBN6LX76KJ3EAVIQLPEBI",
+  "algodUrl": "https://testnet-api.algonode.cloud",
+  "indexerUrl": "https://testnet-idx.algonode.cloud"
+}

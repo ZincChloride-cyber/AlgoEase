@@ -7,57 +7,17 @@ const { authenticate } = require('../middleware/auth');
 // Test endpoint to check all bounties in database
 router.get('/test/all', async (req, res) => {
   try {
-    console.log('🧪 Test endpoint: Fetching all bounties from database...');
     const allBounties = await Bounty.find({}, { limit: 100 });
     const bountyObjects = allBounties.map(bounty => 
       bounty.toObject ? bounty.toObject() : bounty
     );
-    console.log('✅ Test endpoint: Found', bountyObjects.length, 'bounties');
     res.json({ 
       total: bountyObjects.length,
-      bounties: bountyObjects,
-      message: `Successfully fetched ${bountyObjects.length} bounties from database`
+      bounties: bountyObjects 
     });
   } catch (error) {
-    console.error('❌ Test endpoint error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch bounties', 
-      message: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-});
-
-// Test endpoint to check database connection
-router.get('/test/connection', async (req, res) => {
-  try {
-    const { getSupabase } = require('../config/database');
-    const supabase = getSupabase();
-    
-    // Try a simple query
-    const { data, error } = await supabase
-      .from('bounties')
-      .select('id')
-      .limit(1);
-    
-    if (error) {
-      throw error;
-    }
-    
-    res.json({
-      status: 'connected',
-      message: 'Database connection successful',
-      tableExists: true,
-      sampleCount: data ? data.length : 0
-    });
-  } catch (error) {
-    console.error('❌ Database connection test failed:', error);
-    res.status(500).json({
-      status: 'error',
-      message: 'Database connection failed',
-      error: error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
+    console.error('Error fetching all bounties:', error);
+    res.status(500).json({ error: 'Failed to fetch bounties', message: error.message });
   }
 });
 
@@ -155,36 +115,11 @@ router.get('/', async (req, res) => {
     };
 
     console.log('✅ Returning', bountyObjects.length, 'bounties');
-    
-    // Ensure response format is correct - always return { bounties: [], pagination: {} }
-    if (!responseData.bounties) {
-      responseData.bounties = [];
-    }
-    if (!responseData.pagination) {
-      responseData.pagination = {
-        page: parseInt(page),
-        limit: limitNum,
-        total: 0,
-        pages: 0
-      };
-    }
-    
     res.json(responseData);
   } catch (error) {
     console.error('❌ Error fetching bounties:', error);
     console.error('❌ Error stack:', error.stack);
-    // Return empty array instead of error to prevent frontend crashes
-    res.status(500).json({ 
-      error: 'Failed to fetch bounties', 
-      message: error.message,
-      bounties: [],
-      pagination: {
-        page: 1,
-        limit: 10,
-        total: 0,
-        pages: 0
-      }
-    });
+    res.status(500).json({ error: 'Failed to fetch bounties', message: error.message });
   }
 });
 
@@ -229,21 +164,8 @@ router.post('/', async (req, res, next) => {
   try {
     console.log('📥 Received bounty creation request:', {
       body: req.body,
-      user: req.user,
-      headers: {
-        'content-type': req.headers['content-type'],
-        'authorization': req.headers['authorization'] ? 'Present' : 'Missing'
-      }
+      user: req.user
     });
-    
-    // Verify request body is parsed correctly
-    if (!req.body || Object.keys(req.body).length === 0) {
-      console.error('❌ Request body is empty or not parsed!');
-      return res.status(400).json({
-        error: 'Invalid request',
-        message: 'Request body is empty. Make sure Content-Type is application/json'
-      });
-    }
 
     // Prepare bounty data
     // Use clientAddress from body if provided, otherwise use auth token (req.user.address)
@@ -260,10 +182,8 @@ router.post('/', async (req, res, next) => {
       title: req.body.title,
       description: req.body.description,
       amount: parseFloat(req.body.amount),
-      // New contract doesn't use deadline - make it optional (null if not provided)
-      deadline: req.body.deadline ? new Date(req.body.deadline).toISOString() : null,
-      // New contract doesn't use verifier - set to null (only creator can approve/reject)
-      verifierAddress: null,
+      deadline: new Date(req.body.deadline).toISOString(),
+      verifierAddress: req.body.verifierAddress || clientAddress,
       clientAddress: clientAddress, // Use from body or auth token
       status: 'open',
       requirements: req.body.requirements || [],
@@ -302,11 +222,11 @@ router.post('/', async (req, res, next) => {
       tags: bountyData.tags?.length || 0
     });
 
-    // Validate required fields - new contract doesn't require deadline
-    if (!bountyData.title || !bountyData.description || !bountyData.amount) {
+    // Validate required fields
+    if (!bountyData.title || !bountyData.description || !bountyData.amount || !bountyData.deadline) {
       return res.status(400).json({ 
         error: 'Missing required fields',
-        message: 'Title, description, and amount are required'
+        message: 'Title, description, amount, and deadline are required'
       });
     }
 
@@ -318,17 +238,15 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    // New contract doesn't use deadline - validate only if provided (backward compatibility)
-    if (bountyData.deadline) {
-      const deadlineDate = new Date(bountyData.deadline);
-      const now = new Date();
-      const minDeadline = new Date(now.getTime() - 5 * 60 * 1000); // Allow 5 minutes in the past
-      if (deadlineDate <= minDeadline) {
-        return res.status(400).json({ 
-          error: 'Invalid deadline',
-          message: `Deadline must be in the future (received: ${deadlineDate.toISOString()}, now: ${now.toISOString()})`
-        });
-      }
+    // Validate deadline - allow a small margin (5 minutes) for clock skew
+    const deadlineDate = new Date(bountyData.deadline);
+    const now = new Date();
+    const minDeadline = new Date(now.getTime() - 5 * 60 * 1000); // Allow 5 minutes in the past
+    if (deadlineDate <= minDeadline) {
+      return res.status(400).json({ 
+        error: 'Invalid deadline',
+        message: `Deadline must be in the future (received: ${deadlineDate.toISOString()}, now: ${now.toISOString()})`
+      });
     }
 
     // Validate addresses
@@ -339,8 +257,6 @@ router.post('/', async (req, res, next) => {
         message: 'Client address must be a valid Algorand address'
       });
     }
-    // New contract doesn't use verifier - skip validation (verifierAddress is always null)
-    // Keeping this check for backward compatibility in case old data is sent
     if (bountyData.verifierAddress && !addressRegex.test(bountyData.verifierAddress)) {
       return res.status(400).json({ 
         error: 'Invalid verifier address',
@@ -348,75 +264,25 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    // CRITICAL: When creating a new bounty, we should ALWAYS create a new record
-    // Only update if this is explicitly an update request (has contractId AND transaction ID matches)
-    // If contractId is null/undefined/empty, ALWAYS create a new bounty - never update
-    
-    const hasContractId = bountyData.contractId !== null && 
-                          bountyData.contractId !== undefined && 
-                          bountyData.contractId !== '';
-    
-    console.log('🔍 Bounty creation check:', {
-      hasContractId,
-      contractId: bountyData.contractId,
-      transactionId: bountyData.transactionId || bountyData.createTransactionId,
-      title: bountyData.title?.substring(0, 30) + '...'
-    });
-    
+    // Check if bounty with this contract_id already exists
     let existingBounty = null;
-    let shouldUpdate = false;
-    
-    // ONLY check for existing bounty if contractId is provided AND not null
-    // This ensures new bounties (with null contractId) are always created
-    if (hasContractId) {
+    if (bountyData.contractId) {
       try {
         existingBounty = await Bounty.findOne({ contractId: bountyData.contractId });
         if (existingBounty) {
-          console.log('⚠️ Found existing bounty with contract_id:', bountyData.contractId);
-          
-          // Only update if transaction IDs match (same creation attempt being retried)
-          // If transaction IDs don't match, this is a duplicate contractId - still update to avoid duplicates
-          const existingTxId = existingBounty.create_transaction_id || existingBounty.createTransactionId;
-          const newTxId = bountyData.transactionId || bountyData.createTransactionId;
-          
-          if (existingTxId && newTxId && existingTxId === newTxId) {
-            console.log('📝 Same transaction ID - this is a retry, updating existing bounty');
-            shouldUpdate = true;
-          } else if (existingTxId && newTxId) {
-            console.log('⚠️ Different transaction ID but same contractId - updating to avoid duplicate');
-            shouldUpdate = true;
-          } else {
-            // No transaction ID match - but contractId exists, so update to avoid duplicate
-            console.log('⚠️ Existing bounty found with contractId, updating to avoid duplicate');
-            shouldUpdate = true;
-          }
-        } else {
-          console.log('✅ No existing bounty found with contract_id:', bountyData.contractId, '- will create new');
+          console.log('⚠️ Bounty with contract_id already exists, updating instead of creating:', bountyData.contractId);
         }
       } catch (findError) {
         console.warn('⚠️ Error checking for existing bounty:', findError);
-        // On error, default to creating new bounty
-        shouldUpdate = false;
+        // Continue with creation attempt
       }
-    } else {
-      console.log('📝 No contractId provided - ALWAYS creating new bounty (contractId will be set after on-chain creation)');
-      // CRITICAL: When contractId is null, NEVER check for existing bounties by transaction ID or any other field
-      // This ensures each new bounty creation creates a new database record
-      shouldUpdate = false;
-      existingBounty = null;
-      
-      // Double-check: Even if someone tries to match by transaction ID, don't do it when contractId is null
-      // This prevents accidentally updating an existing bounty when creating a new one
-      console.log('🔒 Lock: contractId is null - creation mode enforced (no updates allowed)');
     }
     
     let savedBounty;
     let verifyBounty = null;
     
     try {
-      // CRITICAL: Only update if we explicitly determined we should update
-      // This prevents accidentally updating when we should create new
-      if (shouldUpdate && existingBounty && hasContractId) {
+      if (existingBounty) {
         // Update existing bounty instead of creating new one
         console.log('📝 Updating existing bounty with contract_id:', bountyData.contractId);
         
@@ -442,11 +308,6 @@ router.post('/', async (req, res, next) => {
             console.log('✅ Updated existing bounty contractId:', contractIdNum);
           }
         }
-        // Update transaction ID if provided
-        if (bountyData.transactionId || bountyData.createTransactionId) {
-          existingBounty.create_transaction_id = bountyData.transactionId || bountyData.createTransactionId;
-          existingBounty.createTransactionId = existingBounty.create_transaction_id;
-        }
         // Don't overwrite status if it's already set (might be accepted, etc.)
         if (bountyData.status && existingBounty.status === 'open') {
           existingBounty.status = bountyData.status;
@@ -454,278 +315,135 @@ router.post('/', async (req, res, next) => {
         
         savedBounty = await existingBounty.save();
         console.log('✅ Existing bounty updated successfully!');
-        console.log('✅ Updated bounty ID:', savedBounty.id);
-        console.log('✅ Updated bounty contractId:', savedBounty.contractId);
       } else {
-        // ALWAYS create new bounty if:
-        // 1. No contractId provided (hasContractId is false)
-        // 2. No existing bounty found
-        // 3. shouldUpdate is false
-        console.log('🆕 Creating NEW bounty (not updating existing)');
-        console.log('🆕 Reason:', {
-          hasContractId,
-          foundExisting: !!existingBounty,
-          shouldUpdate,
-          contractId: bountyData.contractId
-        });
-        
+        // Create new bounty
         const bounty = new Bounty(bountyData);
         console.log('📦 Bounty object created, saving to database...');
         console.log('📦 Bounty data:', JSON.stringify(bountyData, null, 2));
         console.log('📦 Bounty object contract_id:', bounty.contract_id);
         console.log('📦 Bounty object contractId:', bounty.contractId);
         
-        try {
-          savedBounty = await bounty.save();
-          console.log('✅ Bounty saved successfully!');
-          console.log('✅ Saved bounty ID:', savedBounty.id);
-          console.log('✅ Saved bounty contract_id:', savedBounty.contract_id);
-          console.log('✅ Saved bounty contractId:', savedBounty.contractId);
-          
-          // CRITICAL: Verify the save actually worked
-          if (!savedBounty || !savedBounty.id) {
-            console.error('❌ CRITICAL: Bounty.save() returned without ID!');
-            console.error('❌ savedBounty:', savedBounty);
-            throw new Error('Bounty save failed - no ID returned from database');
-          }
-        } catch (saveError) {
-          console.error('❌ Error during bounty.save():', saveError);
-          console.error('❌ Save error details:', {
-            message: saveError.message,
-            code: saveError.code,
-            details: saveError.details,
-            hint: saveError.hint,
-            stack: saveError.stack
-          });
-          throw saveError; // Re-throw to be caught by outer catch
-        }
+        savedBounty = await bounty.save();
+        console.log('✅ Bounty saved successfully!');
+        console.log('✅ Saved bounty contract_id:', savedBounty.contract_id);
+        console.log('✅ Saved bounty contractId:', savedBounty.contractId);
         
-        // CRITICAL: If contract_id is missing, try to get it from the transaction ID
-        // This is more reliable than using bounty_count - 1, which can be wrong if multiple bounties are created simultaneously
-        let contractIdResolved = false;
+        // CRITICAL: If contract_id is missing, ALWAYS try to get it from contract state
+        // This ensures we never have a bounty without a contract_id if it exists on-chain
         if (!savedBounty.contract_id || savedBounty.contract_id === null) {
-          console.log('⚠️ ContractId is missing, attempting to fetch from blockchain...');
+          console.log('⚠️ ContractId is missing, attempting to fetch from contract state...');
           console.log('⚠️ Bounty data contractId:', bountyData.contractId);
           console.log('⚠️ Saved bounty contract_id:', savedBounty.contract_id);
-          console.log('⚠️ Transaction ID:', bountyData.transactionId || bountyData.createTransactionId);
           
-          // First, try to get contractId from the transaction ID if we have it
-          const transactionId = bountyData.transactionId || bountyData.createTransactionId;
-          if (transactionId) {
-            try {
-              const algosdk = require('algosdk');
-              const indexerClient = new algosdk.Indexer(
-                process.env.ALGOD_TOKEN || '',
-                process.env.INDEXER_SERVER || 'https://testnet-idx.algonode.cloud',
-                process.env.ALGOD_PORT || ''
-              );
-              
-              console.log(`🔍 Looking up transaction: ${transactionId}`);
-              const txInfo = await indexerClient.lookupTransactionByID(transactionId).do();
-              
-              // Check global state delta for bounty_count change
-              if (txInfo['global-state-delta']) {
-                for (const delta of txInfo['global-state-delta']) {
-                  const key = Buffer.from(delta.key, 'base64').toString('utf8');
-                  if (key === 'bounty_count' && delta.value) {
-                    const newCount = delta.value.uint || 0;
-                    if (newCount > 0) {
-                      const bountyId = newCount - 1; // New bounty ID is count - 1
-                      console.log(`✅ Got bounty ID ${bountyId} from transaction state delta (count: ${newCount})`);
-                      
-                      // Verify this bounty matches by checking the box
-                      try {
-                        const appId = parseInt(process.env.CONTRACT_APP_ID || process.env.REACT_APP_CONTRACT_APP_ID || '749707697');
-                        const prefix = Buffer.from('bounty_', 'utf8');
-                        const bountyIdBytes = algosdk.encodeUint64(bountyId);
-                        const boxNameBytes = Buffer.concat([prefix, Buffer.from(bountyIdBytes)]);
-                        const boxNameBase64 = boxNameBytes.toString('base64');
-                        
-                        // Wait a bit for box to be indexed (retry with delay)
-                        let boxValue = null;
-                        for (let retry = 0; retry < 3; retry++) {
-                          try {
-                            if (retry > 0) {
-                              console.log(`⏳ Waiting ${retry * 1000}ms for box to be indexed (retry ${retry}/3)...`);
-                              await new Promise(resolve => setTimeout(resolve, retry * 1000));
-                            }
-                            boxValue = await indexerClient.lookupApplicationBoxByIDandName(
-                              appId,
-                              boxNameBase64
-                            ).do();
-                            if (boxValue && boxValue.value) break;
-                          } catch (boxRetryError) {
-                            if (retry === 2) throw boxRetryError;
-                            continue;
-                          }
-                        }
-                        
-                        if (boxValue && boxValue.value) {
-                          const boxData = Buffer.from(boxValue.value, 'base64');
-                          const data = new Uint8Array(boxData);
-                          
-                          if (data.length >= 32) {
-                            const boxClientAddr = algosdk.encodeAddress(data.slice(0, 32));
-                            const savedClientAddr = (savedBounty.client_address || savedBounty.clientAddress || '').toUpperCase().trim();
-                            const boxClientAddrUpper = boxClientAddr.toUpperCase().trim();
-                            
-                            console.log(`🔍 Verifying bounty match - Box client: ${boxClientAddrUpper}, Saved client: ${savedClientAddr}`);
-                            
-                            // If addresses match, this is the correct bounty
-                            if (boxClientAddrUpper === savedClientAddr) {
-                              console.log(`✅ Addresses match! Using contract_id: ${bountyId}`);
-                              savedBounty.contract_id = bountyId;
-                              savedBounty.contractId = bountyId;
-                              await savedBounty.save();
-                              console.log(`✅ Updated saved bounty with contract_id: ${bountyId}`);
-                              // Success - contract_id is set, skip fallback
-                              contractIdResolved = true;
-                              break; // Exit the loop
-                            } else {
-                              console.warn(`⚠️ Addresses don't match. This might not be the correct bounty.`);
-                              console.warn(`⚠️ Box client: ${boxClientAddrUpper}, Saved client: ${savedClientAddr}`);
-                            }
-                          }
-                        }
-                      } catch (boxError) {
-                        console.warn('⚠️ Could not verify box, but using bounty ID from transaction:', boxError.message);
-                      }
-                      
-                      // Use the bounty ID from transaction even if box verification fails
-                      // (box might not be indexed yet)
-                      if (!contractIdResolved) {
-                        savedBounty.contract_id = bountyId;
-                        savedBounty.contractId = bountyId;
-                        await savedBounty.save();
-                        console.log(`✅ Updated saved bounty with contract_id: ${bountyId} (from transaction)`);
-                        // Success - contract_id is set, skip fallback
-                        contractIdResolved = true;
-                        break; // Exit the loop
-                      }
-                    }
-                  }
+          try {
+            // Try to get the latest bounty_count from contract
+            const algosdk = require('algosdk');
+            const algodClient = new algosdk.Algodv2(
+              process.env.ALGOD_TOKEN || '',
+              process.env.ALGOD_SERVER || 'https://testnet-api.algonode.cloud',
+              process.env.ALGOD_PORT || ''
+            );
+            const appId = parseInt(process.env.CONTRACT_APP_ID || process.env.REACT_APP_CONTRACT_APP_ID || '749689686');
+            console.log(`🔍 Fetching contract state for app ID: ${appId}`);
+            
+            const appInfo = await algodClient.getApplicationByID(appId).do();
+            const globalState = {};
+            if (appInfo.params['global-state']) {
+              appInfo.params['global-state'].forEach(state => {
+                const key = Buffer.from(state.key, 'base64').toString();
+                if (state.value.type === 1) {
+                  globalState[key] = state.value.uint;
                 }
-              }
-            } catch (txError) {
-              console.warn('⚠️ Could not get contract ID from transaction:', txError.message);
-              // Continue to fallback method
+              });
             }
-          }
-          
-          // Only use fallback if contractId wasn't resolved from transaction
-          if (!contractIdResolved) {
-            // Fallback: Try to get from contract state (less reliable for concurrent creations)
-            try {
-              const algosdk = require('algosdk');
-              const algodClient = new algosdk.Algodv2(
-                process.env.ALGOD_TOKEN || '',
-                process.env.ALGOD_SERVER || 'https://testnet-api.algonode.cloud',
-                process.env.ALGOD_PORT || ''
-              );
-              const appId = parseInt(process.env.CONTRACT_APP_ID || process.env.REACT_APP_CONTRACT_APP_ID || '749707697');
-              console.log(`🔍 Fallback: Fetching contract state for app ID: ${appId}`);
+            console.log('📊 Contract global state:', globalState);
+            
+            const bountyCount = globalState['bounty_count'] || 0;
+            console.log(`📊 Bounty count from contract: ${bountyCount}`);
+            
+            if (bountyCount > 0) {
+              const latestBountyId = bountyCount - 1;
+              console.log(`✅ Found latest bounty ID from contract: ${latestBountyId}`);
               
-              const appInfo = await algodClient.getApplicationByID(appId).do();
-              const globalState = {};
-              if (appInfo.params['global-state']) {
-                appInfo.params['global-state'].forEach(state => {
-                  const key = Buffer.from(state.key, 'base64').toString();
-                  if (state.value.type === 1) {
-                    globalState[key] = state.value.uint;
-                  }
-                });
-              }
-              console.log('📊 Contract global state:', globalState);
-              
-              const bountyCount = globalState['bounty_count'] || 0;
-              console.log(`📊 Bounty count from contract: ${bountyCount}`);
-              
-              if (bountyCount > 0) {
-                // Try to find the correct bounty by checking all recent boxes
-                // Start from the latest and work backwards
+              // Verify this bounty matches by checking the box
+              try {
                 const indexerClient = new algosdk.Indexer(
                   process.env.ALGOD_TOKEN || '',
                   process.env.INDEXER_SERVER || 'https://testnet-idx.algonode.cloud',
                   process.env.ALGOD_PORT || ''
                 );
                 
-                const savedClientAddr = (savedBounty.client_address || savedBounty.clientAddress || '').toUpperCase().trim();
-                const savedAmount = Math.round(parseFloat(savedBounty.amount || 0) * 1000000);
+                // Try to read the box to verify it matches this bounty
+                const prefix = Buffer.from('bounty_', 'utf8');
+                const bountyIdBytes = algosdk.encodeUint64(latestBountyId);
+                const boxNameBytes = Buffer.concat([prefix, Buffer.from(bountyIdBytes)]);
+                const boxNameBase64 = boxNameBytes.toString('base64');
                 
-                // Check the last few bounties to find the one that matches
-                let foundBountyId = null;
-                for (let i = bountyCount - 1; i >= Math.max(0, bountyCount - 5); i--) {
-                  try {
-                    const prefix = Buffer.from('bounty_', 'utf8');
-                    const bountyIdBytes = algosdk.encodeUint64(i);
-                    const boxNameBytes = Buffer.concat([prefix, Buffer.from(bountyIdBytes)]);
-                    const boxNameBase64 = boxNameBytes.toString('base64');
+                const boxValue = await indexerClient.lookupApplicationBoxByIDandName(
+                  appId,
+                  boxNameBase64
+                ).do();
+                
+                if (boxValue && boxValue.value) {
+                  const boxData = Buffer.from(boxValue.value, 'base64');
+                  const data = new Uint8Array(boxData);
+                  
+                  if (data.length >= 32) {
+                    const boxClientAddr = algosdk.encodeAddress(data.slice(0, 32));
+                    const savedClientAddr = (savedBounty.client_address || savedBounty.clientAddress || '').toUpperCase().trim();
+                    const boxClientAddrUpper = boxClientAddr.toUpperCase().trim();
                     
-                    const boxValue = await indexerClient.lookupApplicationBoxByIDandName(
-                      appId,
-                      boxNameBase64
-                    ).do();
+                    console.log(`🔍 Comparing addresses - Box: ${boxClientAddrUpper}, Saved: ${savedClientAddr}`);
                     
-                    if (boxValue && boxValue.value) {
-                      const boxData = Buffer.from(boxValue.value, 'base64');
-                      const data = new Uint8Array(boxData);
-                      
-                      if (data.length >= 73) {
-                        // Box format: client_addr(32) + freelancer_addr(32) + amount(8) + status(1) + task_desc(variable)
-                        const boxClientAddr = algosdk.encodeAddress(data.slice(0, 32));
-                        const boxAmount = algosdk.decodeUint64(new Uint8Array(data.slice(64, 72)));
-                        const boxClientAddrUpper = boxClientAddr.toUpperCase().trim();
-                        
-                        // Check if this matches our bounty
-                        if (boxClientAddrUpper === savedClientAddr && 
-                            BigInt(savedAmount) === BigInt(boxAmount)) {
-                          console.log(`✅ Found matching bounty! ID: ${i}, Client: ${boxClientAddrUpper}, Amount: ${savedAmount}`);
-                          foundBountyId = i;
-                          break;
-                        }
+                    // If addresses match, this is likely the correct bounty
+                    if (boxClientAddrUpper === savedClientAddr) {
+                      console.log(`✅ Addresses match! Using contract_id: ${latestBountyId}`);
+                      // Update the saved bounty with the contract ID
+                      savedBounty.contract_id = latestBountyId;
+                      savedBounty.contractId = latestBountyId;
+                      await savedBounty.save();
+                      console.log(`✅ Updated saved bounty with contract_id: ${latestBountyId}`);
+                    } else {
+                      console.warn(`⚠️ Addresses don't match. Box: ${boxClientAddrUpper}, Saved: ${savedClientAddr}`);
+                      // Still try to use it if it's the latest one and we don't have a contract_id
+                      if (!savedBounty.contract_id) {
+                        console.log(`⚠️ Using latest bounty ID anyway since we don't have one: ${latestBountyId}`);
+                        savedBounty.contract_id = latestBountyId;
+                        savedBounty.contractId = latestBountyId;
+                        await savedBounty.save();
+                        console.log(`✅ Updated saved bounty with contract_id: ${latestBountyId}`);
                       }
                     }
-                  } catch (boxError) {
-                    // Box might not exist or not be indexed yet - continue checking
-                    continue;
                   }
-                }
-                
-                if (foundBountyId !== null) {
-                  savedBounty.contract_id = foundBountyId;
-                  savedBounty.contractId = foundBountyId;
-                  await savedBounty.save();
-                  console.log(`✅ Updated saved bounty with contract_id: ${foundBountyId} (matched by client and amount)`);
                 } else {
-                  // Last resort: use the latest bounty ID if we can't find a match
-                  // This is less reliable but better than leaving it null
-                  const latestBountyId = bountyCount - 1;
-                  console.warn(`⚠️ Could not find matching bounty, using latest ID: ${latestBountyId}`);
-                  console.warn(`⚠️ This may be incorrect if multiple bounties were created simultaneously`);
-                  
-                  // Check if this contract_id is already taken
-                  const existingBountyWithId = await Bounty.findOne({ contractId: latestBountyId });
-                  if (!existingBountyWithId || existingBountyWithId.id === savedBounty.id) {
-                    // Safe to use this ID
+                  console.warn(`⚠️ Box not found for bounty ID ${latestBountyId}, but using it anyway`);
+                  // Use it anyway if we don't have a contract_id
+                  if (!savedBounty.contract_id) {
                     savedBounty.contract_id = latestBountyId;
                     savedBounty.contractId = latestBountyId;
                     await savedBounty.save();
-                    console.log(`✅ Updated saved bounty with contract_id: ${latestBountyId} (fallback)`);
-                  } else {
-                    console.error(`❌ Contract ID ${latestBountyId} is already taken by another bounty`);
-                    console.error(`❌ This bounty will remain without a contract_id - manual intervention may be needed`);
+                    console.log(`✅ Updated saved bounty with contract_id: ${latestBountyId}`);
                   }
                 }
-              } else {
-                console.warn('⚠️ Bounty count is 0, cannot determine contract_id');
+              } catch (boxError) {
+                console.warn('⚠️ Could not verify box, but using latest bounty ID:', boxError.message);
+                // Use it anyway if we don't have a contract_id
+                if (!savedBounty.contract_id) {
+                  savedBounty.contract_id = latestBountyId;
+                  savedBounty.contractId = latestBountyId;
+                  await savedBounty.save();
+                  console.log(`✅ Updated saved bounty with contract_id: ${latestBountyId}`);
+                }
               }
-            } catch (contractError) {
-              console.error('❌ Could not fetch contract ID from contract state:', contractError);
-              console.error('❌ Contract error details:', {
-                message: contractError.message,
-                stack: contractError.stack
-              });
+            } else {
+              console.warn('⚠️ Bounty count is 0, cannot determine contract_id');
             }
+          } catch (contractError) {
+            console.error('❌ Could not fetch contract ID from contract state:', contractError);
+            console.error('❌ Contract error details:', {
+              message: contractError.message,
+              stack: contractError.stack
+            });
           }
         } else {
           console.log(`✅ Contract_id already set: ${savedBounty.contract_id}`);
@@ -770,94 +488,87 @@ router.post('/', async (req, res, next) => {
         stack: saveError.stack
       });
       
-      // Check if it's a database connection error
-      if (saveError.message && saveError.message.includes('Supabase client not initialized')) {
-        console.error('❌ CRITICAL: Database not connected!');
-        console.error('❌ Please check database configuration in backend/.env');
-        return res.status(500).json({
-          error: 'Database connection error',
-          message: 'Database is not connected. Please check backend configuration.',
-          details: 'Supabase client not initialized'
-        });
-      }
-      
-      // If it's a duplicate contract_id error, check if it's a real duplicate or a race condition
+      // If it's a duplicate contract_id error, try to find and return existing bounty
       if (saveError.code === '23505' || saveError.message.includes('duplicate') || saveError.message.includes('unique')) {
-        console.log('🔄 Duplicate constraint detected, checking if this is a real duplicate...');
-        
-        // Check if the error is about contract_id uniqueness
-        const isContractIdDuplicate = saveError.message?.includes('contract_id') || 
-                                      saveError.details?.includes('contract_id') ||
-                                      saveError.hint?.includes('contract_id');
-        
-        if (isContractIdDuplicate && bountyData.contractId !== null && bountyData.contractId !== undefined) {
-          // This is a duplicate contract_id - find and return existing bounty
-          try {
+        console.log('🔄 Duplicate contract_id detected, attempting to find existing bounty...');
+        try {
+          if (bountyData.contractId) {
             const existingBounty = await Bounty.findOne({ contractId: bountyData.contractId });
             if (existingBounty) {
               console.log('✅ Found existing bounty with contract_id:', bountyData.contractId);
-              
-              // Check if transaction IDs match (same creation attempt)
-              const existingTxId = existingBounty.create_transaction_id || existingBounty.createTransactionId;
-              const newTxId = bountyData.transactionId || bountyData.createTransactionId;
-              
-              if (existingTxId && newTxId && existingTxId === newTxId) {
-                // Same transaction - this is an idempotent retry, return existing
-                console.log('✅ Same transaction ID - returning existing bounty (idempotent)');
-                const existingBountyData = existingBounty.toObject ? existingBounty.toObject() : existingBounty;
-                return res.status(200).json({
-                  ...existingBountyData,
-                  message: 'Bounty already exists with this contract ID and transaction ID',
-                  smartContract: {
-                    action: 'create_bounty',
-                    required: {
-                      payment: {
-                        amount: existingBounty.amount,
-                        to: process.env.REACT_APP_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS || 'ZS2EW3YGUDATK5OH4S7QUPMIJ4T6ROU6OFJEAGKFD2RSEHPSOCJ3BZBFLU',
-                        note: 'AlgoEase: Bounty Payment'
-                      },
-                      appCall: {
-                        method: 'create_bounty',
-                        args: [
-                          Math.round(existingBounty.amount * 1000000),
-                          Math.floor(new Date(existingBounty.deadline).getTime() / 1000),
-                          (existingBounty.title ? `${existingBounty.title}\n\n${existingBounty.description}` : existingBounty.description).slice(0, 1000)
-                        ],
-                        accounts: [existingBounty.verifierAddress || existingBounty.clientAddress]
-                      }
+              // Return the existing bounty as success (idempotent operation)
+              const existingBountyData = existingBounty.toObject ? existingBounty.toObject() : existingBounty;
+              return res.status(200).json({
+                ...existingBountyData,
+                message: 'Bounty with this contract ID already exists, returning existing bounty',
+                smartContract: {
+                  action: 'create_bounty',
+                  required: {
+                    payment: {
+                      amount: existingBounty.amount,
+                      to: process.env.REACT_APP_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS || 'GJR2ZOTCUS6JK63T3V47KYPZ7ZEKOIVTESQEQOUZCXIA3E35QR46NC46TM',
+                      note: 'AlgoEase: Bounty Payment'
+                    },
+                    appCall: {
+                      method: 'create_bounty',
+                      args: [
+                        Math.round(existingBounty.amount * 1000000),
+                        Math.floor(new Date(existingBounty.deadline).getTime() / 1000),
+                        (existingBounty.title ? `${existingBounty.title}\n\n${existingBounty.description}` : existingBounty.description).slice(0, 1000)
+                      ],
+                      accounts: [existingBounty.verifierAddress || existingBounty.clientAddress]
                     }
                   }
-                });
-              } else {
-                // Different transaction ID - this is a real duplicate contract_id
-                // This shouldn't happen in normal flow, but handle it gracefully
-                console.warn('⚠️ Duplicate contract_id with different transaction ID - this may indicate an issue');
-                console.warn('⚠️ Existing txId:', existingTxId, 'New txId:', newTxId);
-                
-                // Return existing bounty but warn about the duplicate
-                const existingBountyData = existingBounty.toObject ? existingBounty.toObject() : existingBounty;
-                return res.status(200).json({
-                  ...existingBountyData,
-                  message: 'Bounty with this contract ID already exists. If you intended to create a new bounty, please check the contract ID.',
-                  warning: 'Duplicate contract_id detected'
-                });
-              }
+                }
+              });
             }
-          } catch (findError) {
-            console.error('❌ Error finding existing bounty:', findError);
           }
-        } else {
-          // Not a contract_id duplicate - might be another unique constraint
-          // In this case, we should still try to create a new bounty
-          console.warn('⚠️ Duplicate constraint error but not related to contract_id:', saveError.message);
-          console.warn('⚠️ This might be a database constraint issue - allowing creation to proceed');
+        } catch (findError) {
+          console.error('❌ Error finding existing bounty:', findError);
         }
         
-        // If we can't handle it as a duplicate, return error
-        return res.status(409).json({
-          error: 'Duplicate entry',
-          message: saveError.message || 'A bounty with these details already exists',
-          details: saveError.details || saveError.hint
+        // Even if we can't find it in the catch block, try one more time
+        // This handles race conditions where the bounty was just created
+        try {
+          if (bountyData.contractId) {
+            const retryBounty = await Bounty.findOne({ contractId: bountyData.contractId });
+            if (retryBounty) {
+              console.log('✅ Found existing bounty on retry:', bountyData.contractId);
+              const retryBountyData = retryBounty.toObject ? retryBounty.toObject() : retryBounty;
+              return res.status(200).json({
+                ...retryBountyData,
+                message: 'Bounty with this contract ID already exists, returning existing bounty',
+                smartContract: {
+                  action: 'create_bounty',
+                  required: {
+                    payment: {
+                      amount: retryBounty.amount,
+                      to: process.env.REACT_APP_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS || 'GJR2ZOTCUS6JK63T3V47KYPZ7ZEKOIVTESQEQOUZCXIA3E35QR46NC46TM',
+                      note: 'AlgoEase: Bounty Payment'
+                    },
+                    appCall: {
+                      method: 'create_bounty',
+                      args: [
+                        Math.round(retryBounty.amount * 1000000),
+                        Math.floor(new Date(retryBounty.deadline).getTime() / 1000),
+                        (retryBounty.title ? `${retryBounty.title}\n\n${retryBounty.description}` : retryBounty.description).slice(0, 1000)
+                      ],
+                      accounts: [retryBounty.verifierAddress || retryBounty.clientAddress]
+                    }
+                  }
+                }
+              });
+            }
+          }
+        } catch (retryError) {
+          console.error('❌ Error on retry finding existing bounty:', retryError);
+        }
+        
+        // Last resort: return 200 with minimal data so frontend can continue
+        return res.status(200).json({
+          contractId: bountyData.contractId,
+          message: 'Bounty with this contract ID already exists in the database',
+          exists: true
         });
       }
       
@@ -903,17 +614,17 @@ router.post('/', async (req, res, next) => {
         required: {
           payment: {
             amount: savedBounty.amount,
-            to: process.env.REACT_APP_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS || 'M4RDVCJZ3KESIMZB6V4Z2ZMWPTQ4SOWDPBMXNPHFHSYSVOILAPIIDBXN3Q', // Bounty Escrow Contract address
+            to: process.env.REACT_APP_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS || 'GJR2ZOTCUS6JK63T3V47KYPZ7ZEKOIVTESQEQOUZCXIA3E35QR46NC46TM', // V5 Contract escrow address (fixed fee issue)
             note: 'AlgoEase: Bounty Payment'
           },
           appCall: {
             method: 'create_bounty',
             args: [
               Math.round(savedBounty.amount * 1000000), // Convert to microALGO
+              Math.floor(new Date(savedBounty.deadline).getTime() / 1000), // Convert to timestamp
               (savedBounty.title ? `${savedBounty.title}\n\n${savedBounty.description}` : savedBounty.description).slice(0, 1000) // Task description
-              // New contract: no deadline, no verifier
             ],
-            accounts: [] // New contract: no accounts needed
+            accounts: [savedBounty.verifierAddress || savedBounty.clientAddress]
           }
         }
       }
@@ -922,48 +633,8 @@ router.post('/', async (req, res, next) => {
     console.log('📤 Sending response with saved bounty data:', {
       id: responseData.id,
       contractId: responseData.contractId,
-      status: responseData.status,
-      hasId: !!responseData.id,
-      hasContractId: !!responseData.contractId
-    });
-    
-    // CRITICAL: Ensure we have an ID before sending response
-    if (!responseData.id) {
-      console.error('❌ CRITICAL: Response data missing ID!', responseData);
-      // Try to reload the bounty one more time
-      try {
-        if (finalBounty && finalBounty.id) {
-          const reloaded = await Bounty.findById(finalBounty.id);
-          if (reloaded && reloaded.id) {
-            const reloadedData = reloaded.toObject ? reloaded.toObject() : reloaded;
-            responseData = {
-              ...reloadedData,
-              smartContract: responseData.smartContract
-            };
-            console.log('✅ Reloaded bounty with ID:', reloadedData.id);
-          }
-        }
-      } catch (reloadError) {
-        console.error('❌ Failed to reload bounty:', reloadError);
-      }
-      
-      // If still no ID, return error but include the data we have
-      if (!responseData.id) {
-        return res.status(500).json({
-          error: 'Bounty saved but missing ID in response',
-          message: 'The bounty was saved to the database but the response is missing the ID. Please check the database.',
-          savedData: responseData
-        });
-      }
-    }
-    
-    console.log('✅ Sending successful response with bounty:', {
-      id: responseData.id,
-      contractId: responseData.contractId,
-      title: responseData.title,
       status: responseData.status
     });
-    
     res.status(201).json(responseData);
   } catch (error) {
     console.error('❌ Error creating bounty:', error);
@@ -1397,14 +1068,14 @@ router.post('/:id/accept', authenticate, async (req, res) => {
 router.patch('/:id/transaction', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const { transactionId, action, contractId } = req.body; // action: 'accept', 'approve', 'reject', 'claim', 'refund'
+    const { transactionId, action } = req.body; // action: 'accept', 'approve', 'reject', 'claim', 'refund'
     
     if (!transactionId || !action) {
       return res.status(400).json({ error: 'transactionId and action are required' });
     }
     
     // Validate action
-    const validActions = ['create', 'accept', 'submit', 'approve', 'reject', 'claim', 'refund'];
+    const validActions = ['create', 'accept', 'approve', 'reject', 'claim', 'refund'];
     if (!validActions.includes(action)) {
       return res.status(400).json({ error: `Invalid action. Must be one of: ${validActions.join(', ')}` });
     }
@@ -1423,25 +1094,10 @@ router.patch('/:id/transaction', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Bounty not found' });
     }
     
-    // CRITICAL: If contractId is provided, update it (especially for 'create' action)
-    if (contractId !== undefined && contractId !== null && contractId !== '') {
-      const newContractIdNum = typeof contractId === 'string' ? parseInt(contractId, 10) : contractId;
-      if (!isNaN(newContractIdNum) && isFinite(newContractIdNum) && newContractIdNum >= 0) {
-        console.log('💾 Updating contract_id:', {
-          old: bounty.contract_id,
-          new: newContractIdNum,
-          action: action
-        });
-        bounty.contract_id = newContractIdNum;
-        bounty.contractId = newContractIdNum;
-      }
-    }
-    
     // Update the appropriate transaction ID field
     const transactionFieldMap = {
       'create': 'create_transaction_id',
       'accept': 'accept_transaction_id',
-      'submit': 'submit_transaction_id',
       'approve': 'approve_transaction_id',
       'reject': 'reject_transaction_id',
       'claim': 'claim_transaction_id',
@@ -1455,7 +1111,6 @@ router.patch('/:id/transaction', authenticate, async (req, res) => {
       action: action,
       fieldName: fieldName,
       transactionId: transactionId,
-      contractId: contractId,
       currentValue: bounty[fieldName]
     });
     
@@ -1467,7 +1122,6 @@ router.patch('/:id/transaction', authenticate, async (req, res) => {
     
     console.log('💾 Bounty object before save:', {
       id: bounty.id,
-      contract_id: bounty.contract_id,
       [fieldName]: bounty[fieldName],
       [camelCaseField]: bounty[camelCaseField]
     });
@@ -1477,10 +1131,9 @@ router.patch('/:id/transaction', authenticate, async (req, res) => {
     // Reload to verify it was saved
     const updatedBounty = await Bounty.findById(bounty.id);
     
-    console.log('✅ Transaction ID and contract_id saved:', {
+    console.log('✅ Transaction ID saved:', {
       fieldName: fieldName,
       savedValue: updatedBounty ? updatedBounty[fieldName] : 'NOT FOUND',
-      contract_id: updatedBounty ? updatedBounty.contract_id : 'NOT FOUND',
       bountyId: updatedBounty?.id
     });
     
@@ -1488,7 +1141,6 @@ router.patch('/:id/transaction', authenticate, async (req, res) => {
       message: `Transaction ID updated for ${action}`,
       transactionId: transactionId,
       action: action,
-      contractId: updatedBounty ? updatedBounty.contract_id : null,
       bounty: updatedBounty ? (updatedBounty.toObject ? updatedBounty.toObject() : updatedBounty) : null
     });
   } catch (error) {
@@ -1523,12 +1175,13 @@ router.post('/:id/approve', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Bounty not found' });
     }
 
-    // New contract: Only creator (client) can approve (no verifier)
+    // Allow client (creator) or verifier to approve
     const clientAddr = (bounty.clientAddress || bounty.client_address || '').toUpperCase().trim();
+    const verifierAddr = (bounty.verifierAddress || bounty.verifier_address || '').toUpperCase().trim();
     const userAddr = (req.user.address || '').toUpperCase().trim();
     
-    if (clientAddr !== userAddr) {
-      return res.status(403).json({ error: 'Only the creator can approve this bounty' });
+    if (clientAddr !== userAddr && verifierAddr !== userAddr) {
+      return res.status(403).json({ error: 'Only the creator or verifier can approve this bounty' });
     }
 
     if (bounty.status !== 'submitted') {
@@ -1581,12 +1234,13 @@ router.post('/:id/reject', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Bounty not found' });
     }
 
-    // New contract: Only creator (client) can reject (no verifier)
+    // Allow client (creator) or verifier to reject
     const clientAddr = (bounty.clientAddress || bounty.client_address || '').toUpperCase().trim();
+    const verifierAddr = (bounty.verifierAddress || bounty.verifier_address || '').toUpperCase().trim();
     const userAddr = (req.user.address || '').toUpperCase().trim();
     
-    if (clientAddr !== userAddr) {
-      return res.status(403).json({ error: 'Only the creator can reject this bounty' });
+    if (clientAddr !== userAddr && verifierAddr !== userAddr) {
+      return res.status(403).json({ error: 'Only the creator or verifier can reject this bounty' });
     }
 
     // Can reject if status is submitted or accepted
@@ -1690,11 +1344,11 @@ router.post('/:id/refund', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Bounty not found' });
     }
 
-    // New contract: Only creator (client) can refund (no verifier)
     const clientAddr = bounty.clientAddress || bounty.client_address;
+    const verifierAddr = bounty.verifierAddress || bounty.verifier_address;
     
-    if (clientAddr !== req.user.address) {
-      return res.status(403).json({ error: 'Only the creator can refund this bounty' });
+    if (clientAddr !== req.user.address && verifierAddr !== req.user.address) {
+      return res.status(403).json({ error: 'Only the client or verifier can refund this bounty' });
     }
 
     if (bounty.status === 'claimed' || bounty.status === 'refunded' || bounty.status === 'rejected') {
@@ -1706,8 +1360,13 @@ router.post('/:id/refund', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'Bounty does not have a contract ID' });
     }
 
-    // Update status to refunded
-    bounty.status = 'refunded';
+    // If verifier is refunding an accepted bounty, treat it as rejection
+    // Otherwise, treat it as a regular refund
+    if (verifierAddr === req.user.address && bounty.status === 'accepted') {
+      bounty.status = 'rejected';
+    } else {
+      bounty.status = 'refunded';
+    }
     await bounty.save();
 
     const contractId = bounty.contract_id || bounty.contractId;
@@ -1731,253 +1390,42 @@ router.post('/:id/refund', authenticate, async (req, res) => {
 });
 
 router.post('/:id/auto-refund', async (req, res) => {
-  // New contract doesn't support auto-refund (no deadline field)
-  return res.status(400).json({ 
-    error: 'Auto-refund not supported',
-    message: 'The new contract does not support auto-refund because it does not use deadlines. Use the reject or refund endpoints instead.'
-  });
-});
-
-/**
- * Fetch contract ID from blockchain for a bounty
- * POST /api/bounties/:id/fetch-contract-id
- * This endpoint attempts to fetch the contract ID (bounty ID) from the blockchain
- * by checking the transaction ID or by matching the bounty with on-chain data
- */
-router.post('/:id/fetch-contract-id', async (req, res) => {
   try {
-    const { id } = req.params;
-    console.log('📥 Fetching contract ID from blockchain for bounty:', id);
+    const bounty = await Bounty.findOne({ contractId: req.params.id });
     
-    // Find bounty by database ID
-    let bounty = await Bounty.findById(id);
     if (!bounty) {
       return res.status(404).json({ error: 'Bounty not found' });
     }
-    
-    // If contract ID already exists, return it
-    if (bounty.contract_id && bounty.contract_id !== null) {
-      return res.json({
-        message: 'Contract ID already exists',
-        contractId: bounty.contract_id,
-        bounty: bounty.toObject ? bounty.toObject() : bounty
-      });
+
+    // Check if deadline has passed
+    if (new Date() < bounty.deadline) {
+      return res.status(400).json({ error: 'Deadline has not passed yet' });
     }
-    
-    // Try to fetch from transaction ID first
-    const transactionId = bounty.create_transaction_id || bounty.createTransactionId;
-    if (transactionId) {
-      try {
-        const algosdk = require('algosdk');
-        const indexerClient = new algosdk.Indexer(
-          process.env.ALGOD_TOKEN || '',
-          process.env.INDEXER_SERVER || 'https://testnet-idx.algonode.cloud',
-          process.env.ALGOD_PORT || ''
-        );
-        
-        console.log(`🔍 Looking up transaction: ${transactionId}`);
-        const txInfo = await indexerClient.lookupTransactionByID(transactionId).do();
-        
-        // Check global state delta for bounty_count change
-        if (txInfo['global-state-delta']) {
-          for (const delta of txInfo['global-state-delta']) {
-            const key = Buffer.from(delta.key, 'base64').toString('utf8');
-            if (key === 'bounty_count' && delta.value) {
-              const newCount = delta.value.uint || 0;
-              if (newCount > 0) {
-                const bountyId = newCount - 1; // New bounty ID is count - 1
-                console.log(`✅ Got bounty ID ${bountyId} from transaction state delta (count: ${newCount})`);
-                
-                // Verify this bounty matches by checking the box
-                try {
-                  const appId = parseInt(process.env.CONTRACT_APP_ID || process.env.REACT_APP_CONTRACT_APP_ID || '749707697');
-                  const prefix = Buffer.from('bounty_', 'utf8');
-                  const bountyIdBytes = algosdk.encodeUint64(bountyId);
-                  const boxNameBytes = Buffer.concat([prefix, Buffer.from(bountyIdBytes)]);
-                  const boxNameBase64 = boxNameBytes.toString('base64');
-                  
-                  // Wait a bit for box to be indexed (retry with delay)
-                  let boxValue = null;
-                  for (let retry = 0; retry < 5; retry++) {
-                    try {
-                      if (retry > 0) {
-                        console.log(`⏳ Waiting ${retry * 1000}ms for box to be indexed (retry ${retry}/5)...`);
-                        await new Promise(resolve => setTimeout(resolve, retry * 1000));
-                      }
-                      boxValue = await indexerClient.lookupApplicationBoxByIDandName(
-                        appId,
-                        boxNameBase64
-                      ).do();
-                      if (boxValue && boxValue.value) break;
-                    } catch (boxRetryError) {
-                      if (retry === 4) throw boxRetryError;
-                      continue;
-                    }
-                  }
-                  
-                  if (boxValue && boxValue.value) {
-                    const boxData = Buffer.from(boxValue.value, 'base64');
-                    const data = new Uint8Array(boxData);
-                    
-                    if (data.length >= 32) {
-                      const boxClientAddr = algosdk.encodeAddress(data.slice(0, 32));
-                      const savedClientAddr = (bounty.client_address || bounty.clientAddress || '').toUpperCase().trim();
-                      const boxClientAddrUpper = boxClientAddr.toUpperCase().trim();
-                      
-                      console.log(`🔍 Verifying bounty match - Box client: ${boxClientAddrUpper}, Saved client: ${savedClientAddr}`);
-                      
-                      // If addresses match, this is the correct bounty
-                      if (boxClientAddrUpper === savedClientAddr) {
-                        console.log(`✅ Addresses match! Using contract_id: ${bountyId}`);
-                        bounty.contract_id = bountyId;
-                        bounty.contractId = bountyId;
-                        await bounty.save();
-                        console.log(`✅ Updated bounty with contract_id: ${bountyId}`);
-                        
-                        return res.json({
-                          message: 'Contract ID fetched successfully from transaction',
-                          contractId: bountyId,
-                          source: 'transaction_state_delta',
-                          bounty: bounty.toObject ? bounty.toObject() : bounty
-                        });
-                      } else {
-                        console.warn(`⚠️ Addresses don't match. This might not be the correct bounty.`);
-                      }
-                    }
-                  }
-                } catch (boxError) {
-                  console.warn('⚠️ Could not verify box, but using bounty ID from transaction:', boxError.message);
-                }
-                
-                // Use the bounty ID from transaction even if box verification fails
-                bounty.contract_id = bountyId;
-                bounty.contractId = bountyId;
-                await bounty.save();
-                console.log(`✅ Updated bounty with contract_id: ${bountyId} (from transaction)`);
-                
-                return res.json({
-                  message: 'Contract ID fetched successfully from transaction',
-                  contractId: bountyId,
-                  source: 'transaction_state_delta',
-                  verified: false,
-                  bounty: bounty.toObject ? bounty.toObject() : bounty
-                });
-              }
-            }
+
+    if (bounty.status === 'claimed' || bounty.status === 'refunded') {
+      return res.status(400).json({ error: 'Bounty cannot be refunded' });
+    }
+
+    // Update bounty status
+    bounty.status = 'refunded';
+    await bounty.save();
+
+    res.json({
+      message: 'Bounty auto-refunded successfully',
+      smartContract: {
+        action: 'auto_refund',
+        required: {
+          appCall: {
+            method: 'auto_refund',
+            args: [],
+            accounts: []
           }
         }
-      } catch (txError) {
-        console.warn('⚠️ Could not get contract ID from transaction:', txError.message);
       }
-    }
-    
-    // Fallback: Try to match by checking recent bounties on-chain
-    try {
-      const algosdk = require('algosdk');
-      const algodClient = new algosdk.Algodv2(
-        process.env.ALGOD_TOKEN || '',
-        process.env.ALGOD_SERVER || 'https://testnet-api.algonode.cloud',
-        process.env.ALGOD_PORT || ''
-      );
-      const appId = parseInt(process.env.CONTRACT_APP_ID || process.env.REACT_APP_CONTRACT_APP_ID || '749707697');
-      
-      const appInfo = await algodClient.getApplicationByID(appId).do();
-      const globalState = {};
-      if (appInfo.params['global-state']) {
-        appInfo.params['global-state'].forEach(state => {
-          const key = Buffer.from(state.key, 'base64').toString();
-          if (state.value.type === 1) {
-            globalState[key] = state.value.uint;
-          }
-        });
-      }
-      
-      const bountyCount = globalState['bounty_count'] || 0;
-      console.log(`📊 Bounty count from contract: ${bountyCount}`);
-      
-      if (bountyCount > 0) {
-        const indexerClient = new algosdk.Indexer(
-          process.env.ALGOD_TOKEN || '',
-          process.env.INDEXER_SERVER || 'https://testnet-idx.algonode.cloud',
-          process.env.ALGOD_PORT || ''
-        );
-        
-        const savedClientAddr = (bounty.client_address || bounty.clientAddress || '').toUpperCase().trim();
-        const savedAmount = Math.round(parseFloat(bounty.amount || 0) * 1000000);
-        
-        // Check the last few bounties to find the one that matches
-        let foundBountyId = null;
-        for (let i = bountyCount - 1; i >= Math.max(0, bountyCount - 10); i--) {
-          try {
-            const prefix = Buffer.from('bounty_', 'utf8');
-            const bountyIdBytes = algosdk.encodeUint64(i);
-            const boxNameBytes = Buffer.concat([prefix, Buffer.from(bountyIdBytes)]);
-            const boxNameBase64 = boxNameBytes.toString('base64');
-            
-            const boxValue = await indexerClient.lookupApplicationBoxByIDandName(
-              appId,
-              boxNameBase64
-            ).do();
-            
-            if (boxValue && boxValue.value) {
-              const boxData = Buffer.from(boxValue.value, 'base64');
-              const data = new Uint8Array(boxData);
-              
-              if (data.length >= 73) {
-                // Box format: client_addr(32) + freelancer_addr(32) + amount(8) + status(1) + task_desc(variable)
-                const boxClientAddr = algosdk.encodeAddress(data.slice(0, 32));
-                const boxAmount = algosdk.decodeUint64(new Uint8Array(data.slice(64, 72)));
-                const boxClientAddrUpper = boxClientAddr.toUpperCase().trim();
-                
-                // Check if this matches our bounty
-                if (boxClientAddrUpper === savedClientAddr && 
-                    BigInt(savedAmount) === BigInt(boxAmount)) {
-                  console.log(`✅ Found matching bounty! ID: ${i}, Client: ${boxClientAddrUpper}, Amount: ${savedAmount}`);
-                  foundBountyId = i;
-                  break;
-                }
-              }
-            }
-          } catch (boxError) {
-            // Box might not exist or not be indexed yet - continue checking
-            continue;
-          }
-        }
-        
-        if (foundBountyId !== null) {
-          bounty.contract_id = foundBountyId;
-          bounty.contractId = foundBountyId;
-          await bounty.save();
-          console.log(`✅ Updated bounty with contract_id: ${foundBountyId} (matched by client and amount)`);
-          
-          return res.json({
-            message: 'Contract ID fetched successfully by matching on-chain data',
-            contractId: foundBountyId,
-            source: 'box_matching',
-            bounty: bounty.toObject ? bounty.toObject() : bounty
-          });
-        }
-      }
-    } catch (contractError) {
-      console.error('❌ Could not fetch contract ID from contract state:', contractError);
-    }
-    
-    // If we couldn't find it, return error
-    return res.status(404).json({
-      error: 'Contract ID not found',
-      message: 'Could not find the contract ID on the blockchain. The bounty may not have been created on-chain yet, or the transaction ID is missing.',
-      suggestions: [
-        'Ensure the bounty was created on-chain',
-        'Check that the transaction ID is correct',
-        'Wait a few moments and try again (blockchain indexing may be delayed)'
-      ]
     });
   } catch (error) {
-    console.error('❌ Error fetching contract ID:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch contract ID', 
-      message: error.message 
-    });
+    console.error('Error auto-refunding bounty:', error);
+    res.status(500).json({ error: 'Failed to auto-refund bounty' });
   }
 });
 

@@ -2,11 +2,9 @@
 
 **Decentralized Escrow Platform for Freelance Payments on Algorand**
 
-AlgoEase is a trustless escrow platform that enables secure payments between clients and freelancers using Algorand smart contracts. No middlemen, low fees (~0.001 ALGO), and instant settlement.
+## 📄 Overview
 
-## Overview
-
-AlgoEase solves the trust problem in freelance work by locking funds in a smart contract escrow until work is completed and approved. The contract automatically releases payments or refunds based on predefined conditions.
+AlgoEase is a trustless escrow platform that enables secure payments between clients and freelancers using Algorand smart contracts. The platform solves the trust problem in freelance work by locking funds in a smart contract escrow until work is completed and approved. The contract automatically releases payments or refunds based on predefined conditions, eliminating the need for middlemen while ensuring fast transactions (~4.5 second finality) and low fees (~0.001 ALGO per transaction).
 
 ### Key Features
 
@@ -25,7 +23,18 @@ AlgoEase solves the trust problem in freelance work by locking funds in a smart 
 
 If work isn't approved, the client can request a refund that returns funds from escrow.
 
-## Prerequisites
+## 🔗 Deployed Smart Contracts (TestNet)
+
+The AlgoEase smart contract is currently deployed on Algorand TestNet:
+
+- **Contract Application**: [View on Lora Explorer](https://lora.algokit.io/testnet/application/749707697)
+- **Contract Address**: [View Account on Lora Explorer](https://lora.algokit.io/testnet/account/ZS2EW3YGUDATK5OH4S7QUPMIJ4T6ROU6OFJEAGKFD2RSEHPSOCJ3BZBFLU)
+- **App ID**: `749707697`
+- **Contract Address**: `ZS2EW3YGUDATK5OH4S7QUPMIJ4T6ROU6OFJEAGKFD2RSEHPSOCJ3BZBFLU`
+
+## ⚙️ Setup & Installation
+
+### Prerequisites
 
 - Node.js 20+ and npm 9+
 - Python 3.12+ and pip
@@ -34,7 +43,7 @@ If work isn't approved, the client can request a refund that returns funds from 
 - Supabase account (for backend database)
 - Algorand wallet (Pera Wallet recommended) and TestNet ALGO for contract actions
 
-## Getting Started
+### Getting Started
 
 ### 1. Clone the Repository
 
@@ -294,7 +303,9 @@ algokit project deploy mainnet
 
 **Warning**: Always test thoroughly on TestNet before deploying to MainNet. Smart contracts are immutable once deployed.
 
-## Architecture
+## 🧠 Architecture & Components
+
+AlgoEase consists of four main components working together to provide a secure, decentralized escrow platform:
 
 ```
 ┌─────────────┐         ┌─────────────┐         ┌──────────────┐
@@ -311,10 +322,23 @@ algokit project deploy mainnet
 └──────────────────────────────────────┘
 ```
 
-- **Frontend**: User interface, wallet connection, displays bounties
-- **Backend**: Stores bounty metadata (descriptions, images), provides API
-- **Smart Contract**: Holds escrowed funds, enforces payment rules
-- **Supabase**: Stores off-chain metadata (too expensive for blockchain)
+### Component Breakdown
+
+- **Frontend (React)**: User interface built with React, providing wallet connection via Pera Wallet, bounty browsing, creation, and management. Handles all user interactions and displays real-time bounty status.
+
+- **Backend (Express.js)**: Node.js API server that stores bounty metadata (descriptions, images, additional details) in Supabase. Provides REST API endpoints for bounty management while keeping financial transactions on-chain.
+
+- **Smart Contract (PyTeal)**: Algorand Application Smart Contract written in PyTeal that manages escrow functionality. Stores bounty state using box storage to support multiple concurrent bounties. Handles payment escrow, approval workflow, and automated fund distribution.
+
+- **Supabase (PostgreSQL)**: Relational database for storing off-chain metadata. Used because storing large amounts of data on-chain is expensive. Implements Row Level Security (RLS) for data protection.
+
+### Data Flow
+
+1. **Bounty Creation**: Client creates bounty via frontend → Frontend calls smart contract to lock funds → Backend stores metadata in Supabase
+2. **Bounty Acceptance**: Freelancer accepts via frontend → Frontend calls smart contract to update state
+3. **Work Submission**: Freelancer submits work → Backend stores submission details in Supabase
+4. **Approval & Payment**: Client approves → Frontend calls smart contract → Smart contract releases funds to freelancer
+5. **Refund Flow**: Client requests refund → Frontend calls smart contract → Smart contract returns funds to client
 
 ## Security Notes
 

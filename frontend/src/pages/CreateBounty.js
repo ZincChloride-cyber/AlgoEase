@@ -157,7 +157,7 @@ const CreateBounty = () => {
         await clearPendingTransaction(false);
         console.log('✅ Pending state cleared (local only)');
       } catch (clearError) {
-        console.warn('⚠️ Error clearing pending state (continuing anyway):', clearError);
+        console.warn('⚠️ Error clearing pending transaction state (continuing anyway):', clearError);
       }
       
       // Wait a moment to ensure state is fully cleared
@@ -190,14 +190,15 @@ const CreateBounty = () => {
       
       // Now sign and submit transactions (this will open Pera Wallet)
       // createBounty will handle building, signing, submitting, and confirming
+      // New contract: deadline and verifier are optional (not used by contract)
       let txId;
       try {
         console.log('🔐 Ready to open Pera Wallet for signing...');
         txId = await createBounty(
           parseFloat(formData.amount),
-          formData.deadline,
+          formData.deadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // Default 30 days if not provided
           taskPayload,
-          verifierAddress
+          verifierAddress || account // Use account as default if not provided
         );
       } catch (txError) {
         // Clear local pending state on error (don't disconnect wallet)
@@ -254,46 +255,45 @@ const CreateBounty = () => {
         console.log('🔐 Auth token set for account:', account);
         
         // Get the bounty_id from contract after creation
-        // For V3 contract, we use bounty_count - 1 as the ID
-        // Wait a bit for the contract state to update
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Use improved retry logic with transaction ID
+        console.log('🔍 Getting bounty ID from contract after creation...');
+        let bountyId = null;
         
-        let bountyId;
         try {
-          const state = await contractUtils.getContractState();
-          console.log('📊 Contract state after creation:', state);
-          const bountyCounter = state['bounty_count'] || state[GLOBAL_STATE_KEYS.BOUNTY_COUNT] || 0;
-          console.log('🔢 Bounty counter from state:', bountyCounter);
+          // Use the improved function with retry logic
+          bountyId = await contractUtils.getBountyIdAfterCreationWithRetry(txId, 5, 2000);
           
-          if (bountyCounter > 0) {
-            // The new bounty_id is bounty_counter - 1 (since counter was incremented after creation)
-            bountyId = bountyCounter - 1;
-            console.log('✅ Got bounty ID from contract:', bountyId);
+          if (bountyId !== null && bountyId !== undefined) {
+            console.log(`✅ Successfully retrieved bounty ID: ${bountyId}`);
           } else {
-            console.warn('⚠️ Bounty counter is 0, trying to get from transaction');
-            // Try to get bounty ID from transaction or use a fallback
-            // For now, we'll use the transaction ID as a temporary identifier
-            // The backend will handle the actual contract ID
-            bountyId = null;
+            console.warn('⚠️ Could not retrieve bounty ID after all retries');
           }
         } catch (bountyIdError) {
-          console.error('❌ Failed to get bounty ID from contract:', bountyIdError);
+          console.error('❌ Failed to get bounty ID:', bountyIdError);
+          // Continue anyway - backend can try to fetch it
           bountyId = null;
         }
         
         // If we couldn't get the bounty ID, we'll let the backend handle it
         // The backend can query the contract to get the latest bounty_count
+        // New contract: deadline and verifier are optional (stored in DB but not in contract)
         const bountyData = {
           title: formData.title,
           description: formData.description,
           amount: parseFloat(formData.amount),
-          deadline: new Date(formData.deadline).toISOString(),
+          deadline: formData.deadline ? new Date(formData.deadline).toISOString() : null, // Optional
           clientAddress: account, // Explicitly send wallet address
-          verifierAddress: verifierAddress,
-          contractId: bountyId !== null ? String(bountyId) : undefined, // Let backend set it if we don't have it
+          verifierAddress: verifierAddress || account, // Optional - default to creator
+          contractId: bountyId !== null && bountyId !== undefined ? String(bountyId) : null, // Always send contractId (null if not available)
           transactionId: txId,
           status: 'open',
         };
+        
+        console.log('📤 Bounty data being sent to backend:', {
+          ...bountyData,
+          contractId: bountyData.contractId,
+          hasContractId: bountyData.contractId !== null && bountyData.contractId !== undefined
+        });
         
         console.log('💾 Saving bounty to backend:', JSON.stringify(bountyData, null, 2));
         console.log('🌐 API URL:', process.env.REACT_APP_API_URL || 'http://localhost:5000/api');
@@ -301,30 +301,78 @@ const CreateBounty = () => {
         let savedBounty;
         try {
           // First create the bounty in the database (might not have contractId yet)
-          savedBounty = await apiService.createBounty(bountyData);
-          console.log('✅ Bounty saved to backend successfully:', savedBounty);
+          console.log('📤 Sending bounty data to backend API...');
+          console.log('📤 Bounty data:', JSON.stringify(bountyData, null, 2));
           
-          // Store the creation transaction ID
+          savedBounty = await apiService.createBounty(bountyData);
+          
+          console.log('✅ Bounty saved to backend successfully!');
+          console.log('✅ Saved bounty response:', savedBounty);
+          console.log('✅ Saved bounty ID:', savedBounty?.id);
+          console.log('✅ Saved bounty contractId:', savedBounty?.contractId);
+          
+          // CRITICAL: Verify we got a valid response
+          if (!savedBounty) {
+            throw new Error('Backend returned empty response - bounty may not have been saved');
+          }
+          
+          if (!savedBounty.id) {
+            console.error('❌ CRITICAL: Backend response missing ID!', savedBounty);
+            throw new Error('Backend response missing ID - bounty may not have been saved to database');
+          }
+          
+          // Store the creation transaction ID and contractId
           if (txId && savedBounty.id) {
             try {
-              console.log('💾 Storing creation transaction ID in database...');
-              await apiService.updateBountyTransaction(savedBounty.id, txId, 'create');
-              console.log('✅ Creation transaction ID stored successfully');
+              console.log('💾 Storing creation transaction ID and contractId in database...');
+              // Include contractId if we have it
+              await apiService.updateBountyTransaction(
+                savedBounty.id, 
+                txId, 
+                'create',
+                bountyId !== null && bountyId !== undefined ? String(bountyId) : null
+              );
+              console.log('✅ Creation transaction ID and contractId stored successfully');
             } catch (txError) {
               console.warn('⚠️ Failed to store creation transaction ID (bounty still saved):', txError);
               // Don't throw - the bounty is already saved
             }
           }
           
-          // If we got the bounty ID from the contract, update the database
-          if (bountyId !== null && savedBounty.id) {
+          // CRITICAL: Always try to update contractId if we have it (even if it was sent initially)
+          // This ensures the database always has the correct contractId
+          if (bountyId !== null && bountyId !== undefined && savedBounty.id) {
             try {
-              await apiService.updateBounty(savedBounty.id, { contractId: String(bountyId) });
-              console.log('✅ Bounty contract ID updated:', bountyId);
+              console.log('🔄 Updating bounty with contractId:', bountyId);
+              const updatedBounty = await apiService.updateBounty(savedBounty.id, { contractId: String(bountyId) });
+              console.log('✅ Bounty contract ID updated successfully:', {
+                databaseId: savedBounty.id,
+                contractId: bountyId,
+                updatedBounty: updatedBounty
+              });
+              // Update savedBounty with the updated data
+              savedBounty = updatedBounty;
             } catch (updateError) {
-              console.warn('⚠️ Failed to update contract ID:', updateError);
-              // Not critical - the bounty is already saved
+              console.error('❌ Failed to update contract ID:', updateError);
+              console.error('❌ Update error details:', {
+                message: updateError.message,
+                status: updateError.status,
+                response: updateError.response
+              });
+              // Try one more time with retry
+              try {
+                console.log('🔄 Retrying contract ID update...');
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                const retryUpdated = await apiService.updateBounty(savedBounty.id, { contractId: String(bountyId) });
+                console.log('✅ Contract ID updated on retry:', retryUpdated);
+                savedBounty = retryUpdated;
+              } catch (retryError) {
+                console.error('❌ Retry also failed:', retryError);
+                // Still continue - the bounty is saved, just without contractId
+              }
             }
+          } else if (bountyId === null || bountyId === undefined) {
+            console.warn('⚠️ No bounty ID available to update - contractId may be NULL in database');
           }
         } catch (apiError) {
           console.error('❌ API call failed:', apiError);
@@ -377,7 +425,19 @@ const CreateBounty = () => {
             }
           } else {
             // Server error - get the error message from response
-            const errorMessage = apiError.response?.message || apiError.response?.error || apiError.message;
+            const errorResponse = apiError.response || {};
+            const errorMessage = errorResponse.message || errorResponse.error || apiError.message;
+            
+            // If it's a validation error, include the details
+            if (errorResponse.details && Array.isArray(errorResponse.details)) {
+              const validationDetails = errorResponse.details.map(d => {
+                if (typeof d === 'string') return d;
+                if (d.field && d.message) return `${d.field}: ${d.message}`;
+                return JSON.stringify(d);
+              }).join('; ');
+              throw new Error(`Validation failed: ${validationDetails}. ${errorMessage}`);
+            }
+            
             throw new Error(`Backend error: ${errorMessage}`);
           }
         }

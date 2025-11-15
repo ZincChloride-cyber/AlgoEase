@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useWallet } from '../contexts/WalletContext';
 import apiService from '../utils/api';
+import contractUtils, { GLOBAL_STATE_KEYS } from '../utils/contractUtils';
 
 const statusStyles = {
   open: { label: 'Open', badge: 'bg-gradient-to-r from-secondary-400/25 to-secondary-500/40 text-secondary-100 border border-secondary-300/40' },
@@ -28,6 +29,64 @@ const BountyList = () => {
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState('');
   const [acceptingBountyId, setAcceptingBountyId] = useState(null);
+
+  // Add a refresh function that can be called from outside
+  const refreshBounties = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      console.log('🔄 Refreshing bounties...');
+      
+      const response = await apiService.getBounties({
+        status: filter !== 'all' ? filter : undefined,
+        page: 1,
+        limit: 100,
+        sortBy: 'createdAt',
+        sortOrder: 'desc'
+      });
+
+      let bountiesArray = [];
+      if (response && Array.isArray(response.bounties)) {
+        bountiesArray = response.bounties;
+      } else if (Array.isArray(response)) {
+        bountiesArray = response;
+      } else if (response && response.value && Array.isArray(response.value)) {
+        bountiesArray = response.value;
+      } else if (response && response.data && Array.isArray(response.data)) {
+        bountiesArray = response.data;
+      }
+
+      const transformedBounties = bountiesArray.map((bounty, index) => {
+        let displayId = bounty.contractId;
+        if (displayId === null || displayId === undefined || displayId === '') {
+          displayId = bounty.id || bounty._id || `db-${index}`;
+        }
+        
+        return {
+          id: String(displayId),
+          contractId: bounty.contractId ? String(bounty.contractId) : null,
+          databaseId: bounty.id || bounty._id,
+          title: bounty.title || 'Untitled Bounty',
+          description: bounty.description || '',
+          amount: typeof bounty.amount === 'number' ? bounty.amount : parseFloat(bounty.amount) || 0,
+          deadline: bounty.deadline,
+          status: (bounty.status || 'open').toLowerCase(),
+          client: bounty.clientAddress || bounty.client_address,
+          freelancer: bounty.freelancerAddress || bounty.freelancer_address,
+          verifier: bounty.verifierAddress || bounty.verifier_address,
+          createdAt: bounty.createdAt || bounty.created_at || new Date().toISOString(),
+        };
+      });
+
+      setBounties(transformedBounties);
+      setLoading(false);
+    } catch (error) {
+      console.error('❌ Error refreshing bounties:', error);
+      setError(`Failed to refresh bounties: ${error.message || 'Unknown error'}`);
+      setLoading(false);
+    }
+  }, [filter]);
 
   useEffect(() => {
     let isMounted = true;
@@ -119,13 +178,28 @@ const BountyList = () => {
           bounties: transformedBounties
         });
         
-        console.log('💾 Setting bounties state with', transformedBounties.length, 'bounties');
-        setBounties(transformedBounties);
+        // Ensure we have valid bounties array
+        if (!Array.isArray(transformedBounties)) {
+          console.error('❌ CRITICAL: transformedBounties is not an array!', transformedBounties);
+          transformedBounties = [];
+        }
         
-        // Log after a short delay to see if state was set
-        setTimeout(() => {
-          console.log('🔍 State check after setBounties - bounties count:', transformedBounties.length);
-        }, 100);
+        console.log('💾 Setting bounties state with', transformedBounties.length, 'bounties');
+        console.log('💾 Bounties to set:', transformedBounties.map(b => ({ 
+          id: b.id, 
+          contractId: b.contractId, 
+          title: b.title, 
+          status: b.status 
+        })));
+        
+        if (isMounted) {
+          setBounties(transformedBounties);
+          
+          // Log after a short delay to see if state was set
+          setTimeout(() => {
+            console.log('🔍 State check after setBounties - bounties count:', transformedBounties.length);
+          }, 100);
+        }
       } catch (error) {
         console.error('❌ Error loading bounties:', error);
         console.error('❌ Error details:', {
@@ -151,12 +225,40 @@ const BountyList = () => {
     };
   }, [filter]);
 
+  // Refresh bounties when component becomes visible (user navigates back)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('👁️ Page became visible, refreshing bounties...');
+        refreshBounties();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Also refresh on focus (user switches back to tab)
+    window.addEventListener('focus', refreshBounties);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', refreshBounties);
+    };
+  }, [refreshBounties]);
+
   const filteredBounties = useMemo(() => {
     console.log('🔄 Filtering bounties:', {
       filter,
       totalBounties: bounties.length,
-      bounties: bounties.map(b => ({ id: b.id, status: b.status, title: b.title }))
+      bounties: bounties.map(b => ({ id: b.id, status: b.status, title: b.title })),
+      bountiesIsArray: Array.isArray(bounties),
+      bountiesType: typeof bounties
     });
+    
+    // Ensure bounties is an array
+    if (!Array.isArray(bounties)) {
+      console.error('❌ CRITICAL: bounties is not an array!', { bounties, type: typeof bounties });
+      return [];
+    }
     
     let result;
     if (filter === 'all') {
@@ -176,7 +278,11 @@ const BountyList = () => {
       console.log('✅ Filter is', filter, ', returning', result.length, 'bounties out of', bounties.length);
     }
     
-    console.log('📋 Filtered bounties result:', result.map(b => ({ id: b.id, status: b.status, title: b.title })));
+    console.log('📋 Filtered bounties result:', {
+      count: result.length,
+      bounties: result.map(b => ({ id: b.id, status: b.status, title: b.title })),
+      isArray: Array.isArray(result)
+    });
     return result;
   }, [bounties, filter]);
 
@@ -220,9 +326,373 @@ const BountyList = () => {
     }
 
     // Contract requires numeric contractId
-    const contractBountyId = bounty.contractId ? parseInt(bounty.contractId) : null;
-    if (!contractBountyId || isNaN(contractBountyId)) {
-      alert('This bounty does not have a valid contract ID. It may not have been deployed to the smart contract yet.');
+    // If missing, try to get it from contract state
+    let contractBountyId = bounty.contractId ? parseInt(bounty.contractId) : null;
+    let hasValidContractId = contractBountyId !== null && !isNaN(contractBountyId);
+    
+    if (!hasValidContractId) {
+      console.log('⚠️ Bounty missing contract ID, attempting to fetch from contract state...');
+      console.log('[BountyList] Bounty data:', {
+        id: bounty.id,
+        contractId: bounty.contractId,
+        transactionId: bounty.transactionId || bounty.createTransactionId,
+        client: bounty.client || bounty.clientAddress,
+        amount: bounty.amount
+      });
+      
+      try {
+        let foundBountyId = null;
+        
+        // First, try to list all boxes to see what exists
+        const allBoxes = await contractUtils.listAllBountyBoxes();
+        console.log(`[BountyList] Found ${allBoxes.length} boxes on-chain`);
+        
+        if (allBoxes.length > 0) {
+          // Try to match by client address and amount
+          const bountyClient = (bounty.client || bounty.clientAddress || bounty.client_address || '').toUpperCase().trim();
+          const bountyAmount = Math.round(parseFloat(bounty.amount || 0) * 1000000);
+          
+          console.log(`[BountyList] Searching ${allBoxes.length} existing boxes for match...`);
+          console.log(`[BountyList] Looking for: client=${bountyClient}, amount=${bountyAmount} microAlgos`);
+          
+          for (const boxBounty of allBoxes) {
+            const boxClient = (boxBounty.clientAddress || '').toUpperCase().trim();
+            const boxAmount = Math.round(parseFloat(boxBounty.amount || 0) * 1000000);
+            const amountDiff = Math.abs(bountyAmount - boxAmount);
+            const clientMatch = boxClient === bountyClient;
+            const amountMatch = amountDiff < 1000; // Allow 0.001 ALGO difference
+            
+            console.log(`[BountyList] Checking box bounty ID ${boxBounty.bountyId}:`, {
+              boxClient,
+              boxAmount: boxAmount / 1000000,
+              bountyClient,
+              bountyAmount: bountyAmount / 1000000,
+              clientMatch,
+              amountMatch,
+              amountDiff: amountDiff / 1000000
+            });
+            
+            // Match by client and amount (with tolerance)
+            if (clientMatch && amountMatch) {
+              foundBountyId = boxBounty.bountyId;
+              console.log(`✅ Found matching bounty in existing boxes with ID: ${boxBounty.bountyId}`);
+              break;
+            } else if (clientMatch && amountDiff < 10000) {
+              // If client matches but amount is slightly off (within 0.01 ALGO), still consider it
+              console.log(`⚠️ Client matches but amount differs by ${amountDiff / 1000000} ALGO. Considering as match.`);
+              foundBountyId = boxBounty.bountyId;
+              break;
+            }
+          }
+        }
+        
+        // If we found a match, update the database
+        if (foundBountyId !== null) {
+          try {
+            const originalToken = apiService.getAuthToken();
+            apiService.setAuthToken(account);
+            await apiService.updateBounty(apiBountyId, { contractId: String(foundBountyId) });
+            console.log(`✅ Updated bounty with contract ID: ${foundBountyId}`);
+            
+            // Update local bounty state
+            bounty.contractId = String(foundBountyId);
+            contractBountyId = foundBountyId;
+            hasValidContractId = true;
+            
+            if (originalToken) {
+              apiService.setAuthToken(originalToken);
+            } else {
+              apiService.removeAuthToken();
+            }
+          } catch (updateError) {
+            console.warn('⚠️ Failed to update bounty with contract ID:', updateError);
+            // Still use the found ID for this transaction
+            contractBountyId = foundBountyId;
+            hasValidContractId = true;
+          }
+        }
+        
+        // If still no match, try the old method (checking by bounty_count)
+        if (!hasValidContractId) {
+          // Try to get the latest bounty count from contract
+          const contractState = await contractUtils.getContractState();
+          const bountyCount = contractState['bounty_count'] || contractState[GLOBAL_STATE_KEYS.BOUNTY_COUNT] || 0;
+          console.log(`[BountyList] Contract has ${bountyCount} bounties (IDs 0-${bountyCount - 1})`);
+          
+          if (bountyCount > 0) {
+            // Reset foundBountyId for the second search
+            foundBountyId = null;
+            const bountyClient = (bounty.client || bounty.clientAddress || bounty.client_address || '').toUpperCase().trim();
+            const bountyAmount = Math.round(parseFloat(bounty.amount || 0) * 1000000);
+            const bountyTitle = (bounty.title || '').trim();
+            const bountyDescription = (bounty.description || '').trim();
+            
+            console.log(`[BountyList] Searching for bounty with:`, {
+              client: bountyClient,
+              amount: bountyAmount,
+              title: bountyTitle.substring(0, 50)
+            });
+            
+            // Check from most recent to oldest - search ALL bounties if needed
+            // Start with recent ones first, but if not found, search all
+            const searchRange = Math.min(50, bountyCount); // Increased from 20 to 50
+            const startIndex = Math.max(0, bountyCount - searchRange);
+            console.log(`[BountyList] Searching ${searchRange} bounties (IDs ${startIndex} to ${bountyCount - 1})`);
+            
+            for (let i = bountyCount - 1; i >= startIndex; i--) {
+              try {
+                console.log(`[BountyList] Checking bounty ID ${i}...`);
+                const boxBounty = await contractUtils.getBountyFromBox(i);
+                
+                if (!boxBounty) {
+                  console.log(`[BountyList] Bounty ID ${i} box is null or empty`);
+                  continue;
+                }
+                
+                // Check if this bounty matches by client address and amount
+                const boxClient = (boxBounty.clientAddress || '').toUpperCase().trim();
+                const boxAmount = Math.round(parseFloat(boxBounty.amount || 0) * 1000000); // Convert to microAlgos
+                
+                console.log(`[BountyList] Bounty ID ${i} details:`, {
+                  boxClient,
+                  boxAmount,
+                  bountyClient,
+                  bountyAmount,
+                  clientMatch: boxClient === bountyClient,
+                  amountMatch: Math.abs(bountyAmount - boxAmount) < 1000
+                });
+                
+                // Match by client and amount (primary match)
+                const amountDiff = Math.abs(bountyAmount - boxAmount);
+                const clientMatch = boxClient === bountyClient;
+                const amountMatch = amountDiff < 1000; // Allow 0.001 ALGO difference
+                
+                if (clientMatch && amountMatch) {
+                  // Additional verification: check if title/description matches if available
+                  const boxTaskDesc = (boxBounty.taskDescription || '').trim();
+                  const matchesDescription = !bountyTitle || boxTaskDesc.includes(bountyTitle) || boxTaskDesc.includes(bountyDescription);
+                  
+                  if (matchesDescription || !bountyTitle) {
+                    foundBountyId = i;
+                    console.log(`✅ Found matching bounty on-chain with ID: ${i}`, {
+                      client: boxClient,
+                      amount: boxAmount / 1000000,
+                      status: boxBounty.status,
+                      taskDesc: boxTaskDesc.substring(0, 50)
+                    });
+                    break;
+                  } else {
+                    console.log(`[BountyList] Bounty ID ${i} matches client/amount but not description`);
+                  }
+                } else if (clientMatch && amountDiff < 10000) {
+                  // If client matches but amount is slightly off (within 0.01 ALGO), still consider it
+                  console.log(`⚠️ Bounty ID ${i}: Client matches but amount differs by ${amountDiff / 1000000} ALGO. Considering as match.`);
+                  foundBountyId = i;
+                  break;
+                } else {
+                  console.log(`[BountyList] Bounty ID ${i} does not match: clientMatch=${clientMatch}, amountDiff=${amountDiff / 1000000} ALGO`);
+                }
+              } catch (boxError) {
+                // Continue checking other bounties
+                console.log(`[BountyList] Could not read box ${i}:`, boxError.message);
+                // If it's a 404, the box doesn't exist - this is expected for some IDs
+                if (boxError.message && boxError.message.includes('404')) {
+                  console.log(`[BountyList] Box ${i} does not exist (404) - this is normal if bounty_count was incremented but box wasn't created`);
+                }
+                continue;
+              }
+            }
+            
+            if (foundBountyId !== null) {
+              // Update the bounty with the found contract ID
+              try {
+                const originalToken = apiService.getAuthToken();
+                apiService.setAuthToken(account);
+                await apiService.updateBounty(apiBountyId, { contractId: String(foundBountyId) });
+                console.log(`✅ Updated bounty with contract ID: ${foundBountyId}`);
+                
+                // Update local bounty state
+                bounty.contractId = String(foundBountyId);
+                
+                // Use the found ID
+                contractBountyId = foundBountyId;
+                hasValidContractId = true;
+                
+                if (originalToken) {
+                  apiService.setAuthToken(originalToken);
+                } else {
+                  apiService.removeAuthToken();
+                }
+              } catch (updateError) {
+                console.warn('⚠️ Failed to update bounty with contract ID:', updateError);
+                // Still use the found ID for this transaction
+                contractBountyId = foundBountyId;
+                hasValidContractId = true;
+              }
+            } else {
+              console.warn(`[BountyList] Could not find matching bounty on-chain. Searched ${searchRange} most recent bounties.`);
+              console.warn(`[BountyList] Bounty details:`, {
+                client: bountyClient,
+                amount: bountyAmount,
+                title: bountyTitle
+              });
+              
+              // Try to list all boxes to see what actually exists
+              try {
+                console.log(`[BountyList] Attempting to list all boxes to diagnose the issue...`);
+                const contractState = await contractUtils.getContractState();
+                const allBoxes = await contractUtils.listAllBountyBoxes();
+                console.log(`[BountyList] Found ${allBoxes.length} boxes on-chain`);
+                
+                if (allBoxes.length === 0) {
+                  console.warn(`[BountyList] No boxes found on-chain, but bounty_count = ${bountyCount}. This suggests the bounty creation may have failed.`);
+                } else {
+                  console.log(`[BountyList] Available boxes:`, allBoxes.map(b => ({
+                    bountyId: b.bountyId,
+                    client: b.clientAddress,
+                    amount: b.amount
+                  })));
+                }
+              } catch (listError) {
+                console.warn(`[BountyList] Could not list boxes:`, listError);
+              }
+            }
+          } else {
+            console.warn(`[BountyList] Contract has no bounties yet (bounty_count = 0)`);
+          }
+        }
+      } catch (stateError) {
+        console.error('❌ Failed to fetch contract state:', stateError);
+      }
+    }
+      
+    // If still no valid contract ID, try one more thing: check if we have a transaction ID
+    // and try to find the bounty by checking ALL boxes (not just recent ones)
+    if (!hasValidContractId && (bounty.transactionId || bounty.createTransactionId)) {
+      console.log('[BountyList] Still no contractId found. Trying exhaustive search of ALL boxes...');
+      try {
+        const contractState = await contractUtils.getContractState();
+        const totalBountyCount = contractState['bounty_count'] || contractState[GLOBAL_STATE_KEYS.BOUNTY_COUNT] || 0;
+        console.log(`[BountyList] Exhaustive search: checking ALL ${totalBountyCount} bounties...`);
+        
+        const bountyClient = (bounty.client || bounty.clientAddress || bounty.client_address || '').toUpperCase().trim();
+        const bountyAmount = Math.round(parseFloat(bounty.amount || 0) * 1000000);
+        
+        // Search ALL bounties from newest to oldest
+        for (let i = totalBountyCount - 1; i >= 0; i--) {
+          try {
+            const boxBounty = await contractUtils.getBountyFromBox(i);
+            if (boxBounty) {
+              const boxClient = (boxBounty.clientAddress || '').toUpperCase().trim();
+              const boxAmount = Math.round(parseFloat(boxBounty.amount || 0) * 1000000);
+              const amountDiff = Math.abs(bountyAmount - boxAmount);
+              const clientMatch = boxClient === bountyClient;
+              
+              if (clientMatch && amountDiff < 1000) {
+                console.log(`✅ Found matching bounty in exhaustive search: ID ${i}`);
+                let foundBountyId = i;
+                
+                // Update the database
+                try {
+                  const originalToken = apiService.getAuthToken();
+                  apiService.setAuthToken(account);
+                  await apiService.updateBounty(apiBountyId, { contractId: String(i) });
+                  console.log(`✅ Updated bounty with contract ID: ${i}`);
+                  
+                  bounty.contractId = String(i);
+                  contractBountyId = i;
+                  hasValidContractId = true;
+                  
+                  if (originalToken) {
+                    apiService.setAuthToken(originalToken);
+                  } else {
+                    apiService.removeAuthToken();
+                  }
+                  break; // Found it, exit loop
+                } catch (updateError) {
+                  console.warn('⚠️ Failed to update bounty with contract ID:', updateError);
+                  contractBountyId = i;
+                  hasValidContractId = true;
+                  break;
+                }
+              }
+            }
+          } catch (boxError) {
+            // Continue searching
+            continue;
+          }
+        }
+      } catch (exhaustiveError) {
+        console.warn('[BountyList] Exhaustive search failed:', exhaustiveError);
+      }
+    }
+    
+    // If still no valid contract ID, show error with more helpful information
+    if (!hasValidContractId) {
+      // Try to get bounty count and list all boxes for error message
+      let bountyCountForError = 0;
+      let allBoxesForError = [];
+      try {
+        const contractState = await contractUtils.getContractState();
+        bountyCountForError = contractState['bounty_count'] || contractState[GLOBAL_STATE_KEYS.BOUNTY_COUNT] || 0;
+        allBoxesForError = await contractUtils.listAllBountyBoxes();
+      } catch (e) {
+        console.warn('Could not get contract state for error message:', e);
+      }
+      
+      const bountyClient = (bounty.client || bounty.clientAddress || bounty.client_address || '').toUpperCase().trim();
+      const bountyAmount = Math.round(parseFloat(bounty.amount || 0) * 1000000);
+      
+      // Build detailed error message
+      let errorMsg = `This bounty does not have a valid contract ID. It may not have been deployed to the smart contract yet.\n\n` +
+        `Bounty Details:\n` +
+        `- Client: ${bounty.client || bounty.clientAddress || 'Unknown'}\n` +
+        `- Amount: ${bounty.amount || 'Unknown'} ALGO (${bountyAmount} microAlgos)\n` +
+        `- Title: ${bounty.title || 'N/A'}\n\n` +
+        `Diagnosis:\n` +
+        `- Contract reports ${bountyCountForError} bounties exist\n` +
+        `- Found ${allBoxesForError.length} boxes on-chain\n`;
+      
+      if (allBoxesForError.length > 0) {
+        errorMsg += `- Available bounties on-chain:\n`;
+        allBoxesForError.forEach((b, idx) => {
+          const boxClient = (b.clientAddress || '').toUpperCase().trim();
+          const boxAmount = Math.round(parseFloat(b.amount || 0) * 1000000);
+          const clientMatch = boxClient === bountyClient;
+          const amountDiff = Math.abs(bountyAmount - boxAmount);
+          errorMsg += `  ${idx + 1}. ID ${b.bountyId}: Client=${clientMatch ? 'MATCH' : 'NO MATCH'}, Amount=${b.amount} ALGO (diff: ${(amountDiff / 1000000).toFixed(6)} ALGO)\n`;
+        });
+      } else if (bountyCountForError > 0) {
+        errorMsg += `- ⚠️ WARNING: Contract reports ${bountyCountForError} bounties but no boxes found!\n` +
+          `  This suggests the bounty creation transaction may have failed after incrementing the counter.\n` +
+          `  The boxes were likely never created, meaning these bounties cannot be used.\n\n`;
+      } else {
+        errorMsg += `- No boxes found on-chain (bounty may not have been created)\n\n`;
+      }
+      
+      // Add transaction ID if available
+      const txId = bounty.transactionId || bounty.createTransactionId;
+      const explorerUrl = txId ? `https://testnet.algoexplorer.io/tx/${txId}` : null;
+      
+      errorMsg += `Possible solutions:\n` +
+        `1. Check the bounty creation transaction on AlgoExplorer${explorerUrl ? `:\n   ${explorerUrl}` : ' (transaction ID not available)'}\n` +
+        `2. If the transaction failed or boxes are missing, you may need to recreate the bounty\n` +
+        `3. If you just created this bounty, wait 1-2 minutes for indexing and try again\n` +
+        `4. Verify the client address and amount match exactly\n` +
+        `5. If bounty_count > 0 but boxes don't exist, the creation partially failed - recreate the bounty\n` +
+        `6. Contact support if the issue persists`;
+      
+      console.error('[BountyList] Could not find contract ID:', {
+        bounty,
+        bountyCount: bountyCountForError,
+        availableBoxes: allBoxesForError.map(b => ({
+          id: b.bountyId,
+          client: b.clientAddress,
+          amount: b.amount
+        }))
+      });
+      
+      alert(errorMsg);
       return;
     }
 
@@ -254,6 +724,24 @@ const BountyList = () => {
       console.log('📤 Calling smart contract to accept bounty with contract ID:', contractBountyId);
       const txId = await acceptBounty(contractBountyId);
       console.log('✅ Contract transaction successful:', txId);
+      
+      // Store transaction ID in database
+      if (txId && apiBountyId) {
+        try {
+          const originalToken = apiService.getAuthToken();
+          apiService.setAuthToken(account);
+          await apiService.updateBountyTransaction(apiBountyId, txId, 'accept');
+          console.log('✅ Transaction ID stored successfully');
+          if (originalToken) {
+            apiService.setAuthToken(originalToken);
+          } else {
+            apiService.removeAuthToken();
+          }
+        } catch (txError) {
+          console.warn('⚠️ Failed to store transaction ID:', txError);
+          // Don't throw - the transaction succeeded on-chain
+        }
+      }
       
       alert(`Bounty accepted successfully! Transaction ID: ${txId}\n\nYou will be redirected to the bounty details page.`);
       
@@ -324,9 +812,20 @@ const BountyList = () => {
             your wallet to accept in seconds.
           </p>
         </div>
-        <Link to="/create" className="btn-primary self-start">
-          Launch bounty
-        </Link>
+        <div className="flex gap-3 self-start">
+          <button
+            type="button"
+            onClick={refreshBounties}
+            disabled={loading}
+            className="btn-outline disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh bounties list"
+          >
+            {loading ? 'Refreshing...' : '🔄 Refresh'}
+          </button>
+          <Link to="/create" className="btn-primary">
+            Launch bounty
+          </Link>
+        </div>
       </header>
 
       <div className="flex flex-wrap items-center gap-3 rounded-full border border-white/10 bg-white/5 p-1">
@@ -376,9 +875,27 @@ const BountyList = () => {
           <Link to="/create" className="btn-outline mt-2">
             Create bounty
           </Link>
+          {/* Debug info */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mt-4 text-xs text-white/40">
+              <p>Debug: Total bounties in state: {bounties.length}</p>
+              <p>Filter: {filter}</p>
+              <p>Filtered count: {filteredBounties.length}</p>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Debug info in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="glass-card border border-blue-500/40 bg-blue-500/10 p-4 text-xs text-blue-200">
+              <p>🔍 Debug Info:</p>
+              <p>Total bounties: {bounties.length}</p>
+              <p>Filter: {filter}</p>
+              <p>Filtered bounties: {filteredBounties.length}</p>
+              <p>Loading: {loading ? 'Yes' : 'No'}</p>
+            </div>
+          )}
           {filteredBounties.map((bounty) => {
             const statusStyle = statusStyles[bounty.status] || statusStyles.open;
             return (

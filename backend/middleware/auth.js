@@ -1,8 +1,9 @@
-// Simple authentication middleware
-// In production, this should be replaced with proper JWT or session-based auth
+/**
+ * Authentication Middleware
+ * Simple header-based auth for development
+ * In production, this should be replaced with proper JWT or session-based auth
+ */
 const authenticate = (req, res, next) => {
-  // For now, we'll use a simple header-based auth
-  // In a real app, this would validate JWT tokens or session cookies
   const authHeader = req.headers.authorization;
   
   if (!authHeader) {
@@ -12,7 +13,7 @@ const authenticate = (req, res, next) => {
   // Extract address from header (in production, this would come from JWT)
   const address = authHeader.replace('Bearer ', '');
   
-  // Basic address validation
+  // Basic address validation (Algorand addresses are 58 characters)
   if (!/^[A-Z2-7]{58}$/.test(address)) {
     return res.status(401).json({ error: 'Invalid address format' });
   }

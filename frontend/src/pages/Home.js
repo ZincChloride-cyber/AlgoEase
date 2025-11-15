@@ -58,60 +58,38 @@ const container = {
   },
 };
 
+// Bounty Escrow Contract V2 details - Current deployed contract
+const BOUNTY_ESCROW_APP_ID = parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749707697; // Bounty Escrow Contract V2
+const BOUNTY_ESCROW_ADDRESS = process.env.REACT_APP_CONTRACT_ADDRESS || 'ZS2EW3YGUDATK5OH4S7QUPMIJ4T6ROU6OFJEAGKFD2RSEHPSOCJ3BZBFLU'; // Bounty Escrow Contract V2 address
+
 const Home = () => {
+  // Use environment variables or defaults for contract values
+  // Bounty Escrow Contract V2 - App ID: 749707697
+  // Address: ZS2EW3YGUDATK5OH4S7QUPMIJ4T6ROU6OFJEAGKFD2RSEHPSOCJ3BZBFLU
   const [contractInfo, setContractInfo] = useState({
-    appId: contractUtils.getAppId() || 749648617,
-    address: contractUtils.getAppAddress() || 'W7Z5VWO4V5MNXSS4HCMHQSCIH373NLTAP5IPSNTIQZP6J3XFT6PNEE6KWA'
+    appId: BOUNTY_ESCROW_APP_ID,
+    address: BOUNTY_ESCROW_ADDRESS
   });
 
   useEffect(() => {
-    // Force correct values - reject any old contract IDs
-    const CORRECT_APP_ID = 749648617;
-    const CORRECT_ADDRESS = 'W7Z5VWO4V5MNXSS4HCMHQSCIH373NLTAP5IPSNTIQZP6J3XFT6PNEE6KWA';
-    const OLD_IDS = [749646001, 749599170, 749540140, 749335380];
+    // Use environment variables or defaults
+    const appId = BOUNTY_ESCROW_APP_ID; // Bounty Escrow Contract V2
+    const address = BOUNTY_ESCROW_ADDRESS; // Bounty Escrow Contract V2 address
     
-    // Force re-initialization of contractUtils
+    // Initialize contractUtils with new contract
     contractUtils.initializeContract();
-    
-    // Always use correct values - reject any old IDs
-    let appId = parseInt(process.env.REACT_APP_CONTRACT_APP_ID, 10) || CORRECT_APP_ID;
-    let address = process.env.REACT_APP_CONTRACT_ADDRESS || CORRECT_ADDRESS;
-    
-    // Check contractUtils, but reject old IDs
-    const utilsAppId = contractUtils.getAppId();
-    if (utilsAppId && !OLD_IDS.includes(utilsAppId)) {
-      appId = utilsAppId;
-    }
-    
-    // Reject old contract IDs
-    if (OLD_IDS.includes(appId)) {
-      console.warn('[Home] Detected old contract ID, using correct one');
-      appId = CORRECT_APP_ID;
-    }
-    
-    // Reject old addresses
-    if (address && address.includes('K2M726DQ')) {
-      console.warn('[Home] Detected old contract address, using correct one');
-      address = CORRECT_ADDRESS;
-    }
-    
-    // Update contractUtils with correct values
     contractUtils.setAppId(appId);
     
-    // Calculate address from app ID if needed
-    if (!address || !address.includes('L5GY7SCG')) {
-      address = algosdk.getApplicationAddress(appId);
-    }
-    
+    // Force state update with new values
     setContractInfo({ appId, address });
     
     // Log for debugging
-    console.log('[Home] Contract info loaded:', { 
+    console.log('[Home] Contract info:', { 
       appId, 
-      address: address ? `${address.slice(0, 8)}...${address.slice(-8)}` : 'N/A',
-      envAppId: process.env.REACT_APP_CONTRACT_APP_ID,
-      envAddress: process.env.REACT_APP_CONTRACT_ADDRESS ? 'Set' : 'Not set',
-      isCorrect: appId === CORRECT_APP_ID && address.includes('W7Z5VWO')
+      address,
+      displayedAppId: appId,
+      displayedAddress: address ? `${address.slice(0, 8)}...${address.slice(-8)}` : 'N/A',
+      version: 'Bounty Escrow Contract V2 (Escrow and Claim Flow)'
     });
   }, []);
 

@@ -2,19 +2,38 @@ const express = require('express');
 const router = express.Router();
 const algosdk = require('algosdk');
 
-// Algorand configuration
+// ============================================================================
+// Algorand Client Configuration
+// ============================================================================
+
 const algodClient = new algosdk.Algodv2(
   process.env.ALGOD_TOKEN || '',
   process.env.ALGOD_SERVER || 'https://testnet-api.algonode.cloud',
   process.env.ALGOD_PORT || ''
 );
 
-// Get contract information
+const indexerClient = new algosdk.Indexer(
+  process.env.ALGOD_TOKEN || '',
+  process.env.INDEXER_SERVER || 'https://testnet-idx.algonode.cloud',
+  process.env.ALGOD_PORT || ''
+);
+
+// Contract Configuration (Bounty Escrow V2)
+const BOUNTY_ESCROW_APP_ID = parseInt(process.env.CONTRACT_APP_ID || process.env.REACT_APP_CONTRACT_APP_ID || '749707697');
+const BOUNTY_ESCROW_ADDRESS = process.env.CONTRACT_ADDRESS || process.env.REACT_APP_CONTRACT_ADDRESS || 'ZS2EW3YGUDATK5OH4S7QUPMIJ4T6ROU6OFJEAGKFD2RSEHPSOCJ3BZBFLU';
+
+// ============================================================================
+// Routes
+// ============================================================================
+
+/**
+ * Get contract information
+ * GET /api/contracts/:contractId
+ */
 router.get('/:contractId', async (req, res) => {
   try {
     const { contractId } = req.params;
     
-    // Get application info from Algorand
     const appInfo = await algodClient.getApplicationByID(parseInt(contractId)).do();
     
     // Get global state
@@ -38,7 +57,10 @@ router.get('/:contractId', async (req, res) => {
   }
 });
 
-// Get contract state
+/**
+ * Get contract state
+ * GET /api/contracts/:contractId/state
+ */
 router.get('/:contractId/state', async (req, res) => {
   try {
     const { contractId } = req.params;
@@ -97,7 +119,10 @@ router.get('/:contractId/state', async (req, res) => {
   }
 });
 
-// Get suggested transaction parameters
+/**
+ * Get suggested transaction parameters
+ * GET /api/contracts/params
+ */
 router.get('/params', async (req, res) => {
   try {
     const params = await algodClient.getTransactionParams().do();
@@ -108,7 +133,10 @@ router.get('/params', async (req, res) => {
   }
 });
 
-// Simulate transaction
+/**
+ * Simulate transaction
+ * POST /api/contracts/simulate
+ */
 router.post('/simulate', async (req, res) => {
   try {
     const { transaction } = req.body;
@@ -117,9 +145,7 @@ router.post('/simulate', async (req, res) => {
       return res.status(400).json({ error: 'Transaction data is required' });
     }
 
-    // Simulate the transaction
     const result = await algodClient.simulateRawTransactions([transaction]).do();
-    
     res.json(result);
   } catch (error) {
     console.error('Error simulating transaction:', error);

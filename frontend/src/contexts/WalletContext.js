@@ -734,31 +734,147 @@ export const WalletProvider = ({ children }) => {
     }
   };
 
-  const approveBounty = async (bountyId) => {
+  const submitBounty = async (bountyId) => {
     if (!account) {
       throw new Error('Wallet not connected');
     }
 
-    if (!bountyId) {
+    if (!bountyId && bountyId !== 0) {
       throw new Error('Bounty ID is required');
     }
 
     try {
-      const txn = await contractUtils.approveBounty(account, bountyId);
+      console.log('[submitBounty] Starting submit bounty process:', {
+        account,
+        bountyId,
+        bountyIdType: typeof bountyId
+      });
+
+      // Step 1: Create the transaction
+      console.log('[submitBounty] Step 1: Creating transaction...');
+      const txn = await contractUtils.submitBounty(account, bountyId);
+      console.log('[submitBounty] Transaction created:', {
+        appIndex: txn.appIndex,
+        appArgs: txn.appArgs?.length,
+        appAccounts: txn.appAccounts?.length,
+        hasToByte: typeof txn.toByte === 'function',
+        hasWarning: !!txn._warning
+      });
+
+      // Show warning if present (but don't block)
+      if (txn._warning) {
+        console.warn('[submitBounty] ⚠️ Verification warning:', txn._warning);
+        // Show warning to user but allow them to proceed
+        const proceed = window.confirm(
+          `${txn._warning}\n\n` +
+          `Do you want to proceed with the transaction anyway?\n\n` +
+          `(The contract will validate it on-chain - it may fail if the bounty is invalid)`
+        );
+        if (!proceed) {
+          throw new Error('Transaction cancelled by user');
+        }
+      }
+
+      // Step 2: Sign the transaction (this should open Pera Wallet)
+      console.log('[submitBounty] Step 2: Requesting signature from wallet...');
+      console.log('[submitBounty] ⚠️ Pera Wallet should open now for signing');
       const signedTxn = await signTransaction(txn);
+      console.log('[submitBounty] Transaction signed successfully');
+
+      // Step 3: Submit the transaction to the blockchain
+      console.log('[submitBounty] Step 3: Submitting transaction to blockchain...');
       const txId = await contractUtils.submitTransaction(signedTxn);
+      console.log('[submitBounty] Transaction submitted:', txId);
       
+      // Step 4: Wait for confirmation
+      console.log('[submitBounty] Step 4: Waiting for confirmation...');
       await contractUtils.waitForConfirmation(txId);
+      console.log('[submitBounty] Transaction confirmed');
+      
+      // Step 5: Reload contract state
+      console.log('[submitBounty] Step 5: Reloading contract state...');
       await loadContractState();
+      console.log('[submitBounty] ✅ Submit bounty completed successfully');
       
       return txId;
     } catch (error) {
-      console.error('Failed to approve bounty:', error);
+      console.error('[submitBounty] ❌ Failed to submit bounty:', error);
+      console.error('[submitBounty] Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      
+      // Re-throw with a more user-friendly message if needed
+      if (error.message && error.message.includes('cancelled')) {
+        throw new Error('Transaction signing was cancelled. Please try again.');
+      }
+      if (error.message && error.message.includes('rejected')) {
+        throw new Error('Transaction was rejected. Please try again.');
+      }
+      
       throw error;
     }
   };
 
-  const rejectBounty = async (bountyId) => {
+  const approveBounty = async (bountyId, freelancerAddressFromDB = null) => {
+    if (!account) {
+      throw new Error('Wallet not connected');
+    }
+
+    if (!bountyId && bountyId !== 0) {
+      throw new Error('Bounty ID is required');
+    }
+
+    try {
+      console.log('[approveBounty] Starting approval process:', {
+        account,
+        bountyId,
+        bountyIdType: typeof bountyId,
+        freelancerAddressFromDB
+      });
+
+      // Create the transaction
+      console.log('[approveBounty] Creating transaction...');
+      const txn = await contractUtils.approveBounty(account, bountyId, freelancerAddressFromDB);
+      console.log('[approveBounty] Transaction created:', {
+        appIndex: txn.appIndex,
+        appArgs: txn.appArgs?.length,
+        appAccounts: txn.appAccounts?.length,
+        hasToByte: typeof txn.toByte === 'function'
+      });
+
+      // Sign the transaction (this should open the wallet)
+      console.log('[approveBounty] Requesting signature from wallet...');
+      const signedTxn = await signTransaction(txn);
+      console.log('[approveBounty] Transaction signed successfully');
+
+      // Submit the transaction
+      console.log('[approveBounty] Submitting transaction to blockchain...');
+      const txId = await contractUtils.submitTransaction(signedTxn);
+      console.log('[approveBounty] Transaction submitted:', txId);
+      
+      // Wait for confirmation
+      console.log('[approveBounty] Waiting for confirmation...');
+      await contractUtils.waitForConfirmation(txId);
+      console.log('[approveBounty] Transaction confirmed');
+      
+      // Reload contract state
+      await loadContractState();
+      
+      return txId;
+    } catch (error) {
+      console.error('[approveBounty] Failed to approve bounty:', error);
+      console.error('[approveBounty] Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+      throw error;
+    }
+  };
+
+  const rejectBounty = async (bountyId, clientAddress = null) => {
     if (!account) {
       throw new Error('Wallet not connected');
     }
@@ -768,7 +884,7 @@ export const WalletProvider = ({ children }) => {
     }
 
     try {
-      const txn = await contractUtils.rejectBounty(account, bountyId);
+      const txn = await contractUtils.rejectBounty(account, bountyId, clientAddress);
       const signedTxn = await signTransaction(txn);
       const txId = await contractUtils.submitTransaction(signedTxn);
       
@@ -782,7 +898,7 @@ export const WalletProvider = ({ children }) => {
     }
   };
 
-  const claimBounty = async (bountyId) => {
+  const claimBounty = async (bountyId, freelancerAddress = null) => {
     if (!account) {
       throw new Error('Wallet not connected');
     }
@@ -792,11 +908,28 @@ export const WalletProvider = ({ children }) => {
     }
 
     try {
-      const txn = await contractUtils.claimBounty(account, bountyId);
+      console.log('[claimBounty] Starting claim process:', {
+        account,
+        bountyId,
+        freelancerAddress
+      });
+      
+      const txn = await contractUtils.claimBounty(account, bountyId, freelancerAddress);
+      console.log('[claimBounty] Transaction created:', {
+        appIndex: txn.appIndex,
+        appArgs: txn.appArgs?.length,
+        appAccounts: txn.appAccounts?.length
+      });
+      
       const signedTxn = await signTransaction(txn);
+      console.log('[claimBounty] Transaction signed');
+      
       const txId = await contractUtils.submitTransaction(signedTxn);
+      console.log('[claimBounty] Transaction submitted:', txId);
       
       await contractUtils.waitForConfirmation(txId);
+      console.log('[claimBounty] Transaction confirmed');
+      
       await loadContractState();
       
       return txId;
@@ -952,6 +1085,7 @@ export const WalletProvider = ({ children }) => {
     loadContractState,
     createBounty,
     acceptBounty,
+    submitBounty,
     approveBounty,
     rejectBounty,
     claimBounty,
