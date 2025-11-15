@@ -1,0 +1,6 @@
+{
+  "chainId": "24f9376f-2c52-4342-a42f-79e4088d4519",
+  "status": "failed",
+  "error": "Command failed: cd C:\\Users\\Aditya singh\\PolyOne\\backend\\chains\\24f9376f-2c52-4342-a42f-79e4088d4519 && docker-compose up -d\ntime=\"2025-11-05T20:34:40+05:30\" level=warning msg=\"C:\\\\Users\\\\Aditya singh\\\\PolyOne\\\\backend\\\\chains\\\\24f9376f-2c52-4342-a42f-79e4088d4519\\\\docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion\"\nerror during connect: Get \"http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.46/containers/json?all=1&filters=%7B%22label%22%3A%7B%22com.docker.compose.config-hash%22%3Atrue%2C%22com.docker.compose.project%3D24f9376f-2c52-4342-a42f-79e4088d4519%22%3Atrue%7D%7D\": open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.\n",
+  "failedAt": "2025-11-05T15:04:40.414Z"
+}

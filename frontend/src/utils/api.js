@@ -17,13 +17,13 @@ class ApiService {
       ...options,
     };
 
-    // Add auth token if available
+    // Add auth token if available (set via setAuthToken)
     const token = localStorage.getItem('authToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('🔐 Added auth token to request');
+      console.log('🔐 Added auth token to request:', token.substring(0, 10) + '...');
     } else {
-      console.warn('⚠️ No auth token found in localStorage');
+      console.warn('⚠️ No auth token found in localStorage - request may fail if auth is required');
     }
 
     console.log(`🌐 Making API request to: ${url}`);
@@ -44,6 +44,12 @@ class ApiService {
         const error = new Error(errorData.message || errorData.error || `HTTP error! status: ${response.status}`);
         error.status = response.status;
         error.response = errorData;
+        // For 409 (Conflict) or 200 (already exists), include the response data
+        // so the caller can use it instead of treating it as an error
+        if (response.status === 409 || response.status === 200) {
+          error.isConflict = true;
+          error.existingData = errorData; // Include the existing bounty data
+        }
         throw error;
       }
 
@@ -143,6 +149,21 @@ class ApiService {
     return this.request(`/bounties/${bountyId}/refund`, {
       method: 'POST',
     });
+  }
+
+  async updateBountyTransaction(bountyId, transactionId, action) {
+    console.log('📤 Updating bounty transaction:', { bountyId, transactionId, action });
+    try {
+      const response = await this.request(`/bounties/${bountyId}/transaction`, {
+        method: 'PATCH',
+        body: JSON.stringify({ transactionId, action }),
+      });
+      console.log('✅ Transaction ID update response:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ Failed to update transaction ID:', error);
+      throw error;
+    }
   }
 
   // Contract endpoints

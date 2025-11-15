@@ -62,6 +62,11 @@ def get_bounty_box_name(bounty_id: Expr) -> Expr:
     """Generate box name: "bounty_" + Itob(bounty_id)"""
     return Concat(BOX_PREFIX, Itob(bounty_id))
 
+def status_to_bytes(status: Expr) -> Expr:
+    """Convert status integer to 1 byte representation"""
+    # Itob produces 8 bytes, extract only the last byte (offset 7)
+    return Extract(Itob(status), Int(7), Int(1))
+
 # ============================================================================
 # Main Approval Program
 # ============================================================================
@@ -159,7 +164,7 @@ def create_bounty():
                 Txn.accounts[0],                 # verifier (32 bytes)
                 Itob(amount.load()),             # amount (8 bytes)
                 Itob(deadline.load()),           # deadline (8 bytes)
-                Itob(STATUS_OPEN),               # status (1 byte)
+                status_to_bytes(STATUS_OPEN),    # status (1 byte)
                 Txn.application_args[3]          # task_desc (variable)
             )
         ),
@@ -216,7 +221,7 @@ def accept_bounty():
                 Extract(box_data.load(), VERIFIER_OFFSET, Int(32)),
                 Extract(box_data.load(), AMOUNT_OFFSET, Int(8)),
                 Extract(box_data.load(), DEADLINE_OFFSET, Int(8)),
-                Itob(STATUS_ACCEPTED),  # new status
+                status_to_bytes(STATUS_ACCEPTED),  # new status (1 byte)
                 Extract(box_data.load(), TASK_DESC_OFFSET, Len(box_data.load()) - TASK_DESC_OFFSET)
             )
         ),
@@ -290,7 +295,7 @@ def approve_bounty():
                 verifier.load(),
                 Extract(box_data.load(), AMOUNT_OFFSET, Int(8)),
                 Extract(box_data.load(), DEADLINE_OFFSET, Int(8)),
-                Itob(STATUS_CLAIMED),  # Set to CLAIMED since payment was sent
+                status_to_bytes(STATUS_CLAIMED),  # Set to CLAIMED since payment was sent (1 byte)
                 Extract(box_data.load(), TASK_DESC_OFFSET, Len(box_data.load()) - TASK_DESC_OFFSET)
             )
         ),
@@ -361,7 +366,7 @@ def reject_bounty():
                 verifier.load(),
                 Extract(box_data.load(), AMOUNT_OFFSET, Int(8)),
                 Extract(box_data.load(), DEADLINE_OFFSET, Int(8)),
-                Itob(STATUS_REJECTED),  # new status (rejected)
+                status_to_bytes(STATUS_REJECTED),  # new status (rejected) (1 byte)
                 Extract(box_data.load(), TASK_DESC_OFFSET, Len(box_data.load()) - TASK_DESC_OFFSET)
             )
         ),
@@ -425,7 +430,7 @@ def claim_bounty():
                 Extract(box_data.load(), VERIFIER_OFFSET, Int(32)),
                 Extract(box_data.load(), AMOUNT_OFFSET, Int(8)),
                 Extract(box_data.load(), DEADLINE_OFFSET, Int(8)),
-                Itob(STATUS_CLAIMED),  # new status
+                status_to_bytes(STATUS_CLAIMED),  # new status (1 byte)
                 Extract(box_data.load(), TASK_DESC_OFFSET, Len(box_data.load()) - TASK_DESC_OFFSET)
             )
         ),
@@ -501,7 +506,7 @@ def refund_bounty():
                 Extract(box_data.load(), VERIFIER_OFFSET, Int(32)),
                 Extract(box_data.load(), AMOUNT_OFFSET, Int(8)),
                 Extract(box_data.load(), DEADLINE_OFFSET, Int(8)),
-                Itob(STATUS_REFUNDED),  # new status
+                status_to_bytes(STATUS_REFUNDED),  # new status (1 byte)
                 Extract(box_data.load(), TASK_DESC_OFFSET, Len(box_data.load()) - TASK_DESC_OFFSET)
             )
         ),
@@ -569,7 +574,7 @@ def auto_refund():
                 Extract(box_data.load(), VERIFIER_OFFSET, Int(32)),
                 Extract(box_data.load(), AMOUNT_OFFSET, Int(8)),
                 Extract(box_data.load(), DEADLINE_OFFSET, Int(8)),
-                Itob(STATUS_REFUNDED),  # new status
+                status_to_bytes(STATUS_REFUNDED),  # new status (1 byte)
                 Extract(box_data.load(), TASK_DESC_OFFSET, Len(box_data.load()) - TASK_DESC_OFFSET)
             )
         ),

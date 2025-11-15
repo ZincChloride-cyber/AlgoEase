@@ -1,0 +1,25 @@
+{
+  "chainId": null,
+  "chainName": "Aditya ",
+  "rollupType": "zk-rollup",
+  "gasToken": "AD",
+  "validators": 3,
+  "chainType": "public",
+  "validatorAccess": "public",
+  "l1Config": {
+    "chainId": 80002,
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "polygonRollupManagerAddress": "0x..."
+  },
+  "zkEVMConfig": {
+    "globalExitRootAddress": "0x...",
+    "dataAvailability": "rollup",
+    "blockTime": 2,
+    "gasLimit": "0x1312D00"
+  },
+  "agglayer": {
+    "enabled": true,
+    "endpoint": "https://agglayer-testnet.polygon.technology",
+    "chainId": "5fba657d-3ea3-486b-a7aa-ebfc6618c6f8"
+  }
+}

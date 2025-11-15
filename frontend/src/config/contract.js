@@ -1,7 +1,9 @@
 // Contract configuration
 export const CONTRACT_CONFIG = {
   // Contract App ID (set after deployment)
-  APP_ID: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749599170,
+  APP_ID: parseInt(process.env.REACT_APP_CONTRACT_APP_ID) || 749648617,
+  // Contract Address
+  APP_ADDRESS: process.env.REACT_APP_CONTRACT_ADDRESS || 'W7Z5VWO4V5MNXSS4HCMHQSCIH373NLTAP5IPSNTIQZP6J3XFT6PNEE6KWA',
   
   // Algorand network configuration
   NETWORK: {

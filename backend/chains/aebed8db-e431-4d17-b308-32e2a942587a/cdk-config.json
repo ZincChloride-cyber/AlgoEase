@@ -1,0 +1,25 @@
+{
+  "chainId": 32,
+  "chainName": "v2",
+  "rollupType": "validium",
+  "gasToken": "VX",
+  "validators": 4,
+  "chainType": "private",
+  "validatorAccess": "public",
+  "l1Config": {
+    "chainId": 80002,
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "polygonRollupManagerAddress": "0x..."
+  },
+  "zkEVMConfig": {
+    "globalExitRootAddress": "0x...",
+    "dataAvailability": "validium",
+    "blockTime": 2,
+    "gasLimit": "0x1312D00"
+  },
+  "agglayer": {
+    "enabled": true,
+    "endpoint": "https://agglayer-testnet.polygon.technology",
+    "chainId": "aebed8db-e431-4d17-b308-32e2a942587a"
+  }
+}

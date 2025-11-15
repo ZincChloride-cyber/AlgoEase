@@ -1,0 +1,21 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="polyoneFaviconTitle">
+  <title id="polyoneFaviconTitle">PolyOne Rocket Icon</title>
+  <defs>
+    <linearGradient id="bg" x1="20" y1="20" x2="108" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F963C8" />
+      <stop offset="0.45" stop-color="#C149F1" />
+      <stop offset="1" stop-color="#4CC7F7" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#15072F" flood-opacity="0.35" />
+    </filter>
+  </defs>
+  <rect width="128" height="128" rx="32" fill="url(#bg)" />
+  <g filter="url(#shadow)" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M64 26c-12 9-24 32-24 46v12l-10 10c-2 2-2 5 0 7l4 4 9-9 9 9 5-5-6-6h14l-6 6 5 5 9-9 9 9 4-4c2-2 2-5 0-7l-10-10V72c0-14-12-37-24-46Z" />
+    <path d="M64 48a10 10 0 0 1 10 10v14H54V58a10 10 0 0 1 10-10Z" />
+    <path d="M64 96v8" />
+    <circle cx="48" cy="88" r="6" />
+  </g>
+</svg>
+

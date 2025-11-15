@@ -1,0 +1,25 @@
+{
+  "chainId": 5,
+  "chainName": "yami",
+  "rollupType": "zk-rollup",
+  "gasToken": "BULL",
+  "validators": 3,
+  "chainType": "public",
+  "validatorAccess": "public",
+  "l1Config": {
+    "chainId": 80002,
+    "rpcUrl": "https://rpc-amoy.polygon.technology",
+    "polygonRollupManagerAddress": "0x..."
+  },
+  "zkEVMConfig": {
+    "globalExitRootAddress": "0x...",
+    "dataAvailability": "rollup",
+    "blockTime": 2,
+    "gasLimit": "0x1312D00"
+  },
+  "agglayer": {
+    "enabled": true,
+    "endpoint": "https://agglayer-testnet.polygon.technology",
+    "chainId": "84972ee1-8038-4e03-96e6-5cd82f45f7d4"
+  }
+}

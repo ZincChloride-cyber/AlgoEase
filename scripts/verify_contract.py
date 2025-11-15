@@ -13,7 +13,7 @@ ALGOD_ADDRESS = os.getenv('ALGOD_URL', 'https://testnet-api.algonode.cloud')
 ALGOD_TOKEN = os.getenv('ALGOD_TOKEN', '')
 
 # Contract ID from deployment
-CONTRACT_APP_ID = 749599170
+CONTRACT_APP_ID = 749646001
 
 def verify_contract():
     """Verify the deployed contract"""

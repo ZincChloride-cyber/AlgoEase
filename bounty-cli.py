@@ -37,7 +37,7 @@ def load_env_file(filepath):
 
 env = load_env_file('frontend/.env')
 CREATOR_MNEMONIC = env.get('REACT_APP_CREATOR_MNEMONIC', '')
-APP_ID = int(env.get('REACT_APP_CONTRACT_APP_ID', '749599170'))
+APP_ID = int(env.get('REACT_APP_CONTRACT_APP_ID', '749646001'))
 
 # Initialize client
 algod_client = algod.AlgodClient(ALGOD_TOKEN, ALGOD_ADDRESS)

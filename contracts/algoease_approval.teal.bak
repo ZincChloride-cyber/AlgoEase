@@ -1,0 +1,690 @@
+#pragma version 9
+txn ApplicationID
+int 0
+==
+bnz main_l26
+txn OnCompletion
+int DeleteApplication
+==
+bnz main_l25
+txn OnCompletion
+int UpdateApplication
+==
+bnz main_l24
+txn OnCompletion
+int CloseOut
+==
+bnz main_l23
+txn OnCompletion
+int OptIn
+==
+bnz main_l22
+txn OnCompletion
+int NoOp
+==
+bnz main_l7
+err
+main_l7:
+txna ApplicationArgs 0
+byte "create_bounty"
+==
+bnz main_l21
+txna ApplicationArgs 0
+byte "accept_bounty"
+==
+bnz main_l20
+txna ApplicationArgs 0
+byte "approve_bounty"
+==
+bnz main_l19
+txna ApplicationArgs 0
+byte "reject_bounty"
+==
+bnz main_l18
+txna ApplicationArgs 0
+byte "claim"
+==
+bnz main_l17
+txna ApplicationArgs 0
+byte "refund"
+==
+bnz main_l16
+txna ApplicationArgs 0
+byte "auto_refund"
+==
+bnz main_l15
+err
+main_l15:
+txn NumAppArgs
+int 2
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 37
+byte "bounty_"
+load 37
+itob
+concat
+store 38
+load 38
+box_get
+store 45
+store 44
+load 45
+assert
+load 44
+store 39
+load 39
+extract 112 1
+btoi
+store 40
+load 40
+int 3
+!=
+assert
+load 40
+int 4
+!=
+assert
+load 40
+int 5
+!=
+assert
+load 39
+extract 104 8
+btoi
+store 43
+global LatestTimestamp
+load 43
+>=
+assert
+load 39
+extract 96 8
+btoi
+store 41
+load 39
+extract 0 32
+store 42
+load 41
+int 0
+>
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 42
+itxn_field Receiver
+load 41
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+load 38
+load 42
+load 39
+extract 32 32
+concat
+load 39
+extract 64 32
+concat
+load 39
+extract 96 8
+concat
+load 39
+extract 104 8
+concat
+int 4
+itob
+concat
+load 39
+int 113
+load 39
+len
+int 113
+-
+extract3
+concat
+box_put
+int 1
+return
+main_l16:
+txn NumAppArgs
+int 2
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 28
+byte "bounty_"
+load 28
+itob
+concat
+store 29
+load 29
+box_get
+store 36
+store 35
+load 36
+assert
+load 35
+store 30
+load 30
+extract 112 1
+btoi
+store 31
+load 31
+int 3
+!=
+assert
+load 31
+int 4
+!=
+assert
+load 31
+int 5
+!=
+assert
+load 30
+extract 104 8
+btoi
+store 34
+global LatestTimestamp
+load 34
+<
+assert
+load 30
+extract 0 32
+store 33
+txn Sender
+load 33
+==
+txn Sender
+load 30
+extract 64 32
+==
+||
+assert
+load 30
+extract 96 8
+btoi
+store 32
+load 32
+int 0
+>
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 33
+itxn_field Receiver
+load 32
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+load 29
+load 33
+load 30
+extract 32 32
+concat
+load 30
+extract 64 32
+concat
+load 30
+extract 96 8
+concat
+load 30
+extract 104 8
+concat
+int 4
+itob
+concat
+load 30
+int 113
+load 30
+len
+int 113
+-
+extract3
+concat
+box_put
+int 1
+return
+main_l17:
+txn NumAppArgs
+int 2
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 21
+byte "bounty_"
+load 21
+itob
+concat
+store 22
+load 22
+box_get
+store 27
+store 26
+load 27
+assert
+load 26
+store 23
+load 23
+extract 112 1
+btoi
+int 2
+==
+assert
+load 23
+extract 32 32
+store 25
+load 23
+extract 96 8
+btoi
+store 24
+txn Sender
+load 25
+==
+assert
+load 24
+int 0
+>
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 25
+itxn_field Receiver
+load 24
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+load 22
+load 23
+extract 0 32
+load 25
+concat
+load 23
+extract 64 32
+concat
+load 23
+extract 96 8
+concat
+load 23
+extract 104 8
+concat
+int 3
+itob
+concat
+load 23
+int 113
+load 23
+len
+int 113
+-
+extract3
+concat
+box_put
+int 1
+return
+main_l18:
+txn NumAppArgs
+int 2
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 14
+byte "bounty_"
+load 14
+itob
+concat
+store 15
+load 15
+box_get
+store 20
+store 19
+load 20
+assert
+load 19
+store 16
+load 16
+extract 112 1
+btoi
+int 1
+==
+assert
+txn Sender
+load 16
+extract 0 32
+==
+txn Sender
+load 16
+extract 64 32
+==
+||
+assert
+load 16
+extract 0 32
+store 18
+load 16
+extract 96 8
+btoi
+store 17
+load 17
+int 0
+>
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 18
+itxn_field Receiver
+load 17
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+load 15
+load 18
+load 16
+extract 32 32
+concat
+load 16
+extract 64 32
+concat
+load 16
+extract 96 8
+concat
+load 16
+extract 104 8
+concat
+int 5
+itob
+concat
+load 16
+int 113
+load 16
+len
+int 113
+-
+extract3
+concat
+box_put
+int 1
+return
+main_l19:
+txn NumAppArgs
+int 2
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 9
+byte "bounty_"
+load 9
+itob
+concat
+store 10
+load 10
+box_get
+store 13
+store 12
+load 13
+assert
+load 12
+store 11
+load 11
+extract 112 1
+btoi
+int 1
+==
+assert
+txn Sender
+load 11
+extract 0 32
+==
+txn Sender
+load 11
+extract 64 32
+==
+||
+assert
+load 11
+extract 32 32
+store 14
+load 11
+extract 96 8
+btoi
+store 15
+load 15
+int 0
+>
+assert
+itxn_begin
+int pay
+itxn_field TypeEnum
+global CurrentApplicationAddress
+itxn_field Sender
+load 14
+itxn_field Receiver
+load 15
+itxn_field Amount
+int 0
+itxn_field Fee
+itxn_submit
+load 10
+load 11
+extract 0 32
+load 11
+extract 32 32
+concat
+load 11
+extract 64 32
+concat
+load 11
+extract 96 8
+concat
+load 11
+extract 104 8
+concat
+int 3
+itob
+concat
+load 11
+int 113
+load 11
+len
+int 113
+-
+extract3
+concat
+box_put
+int 1
+return
+main_l20:
+txn NumAppArgs
+int 2
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 3
+byte "bounty_"
+load 3
+itob
+concat
+store 4
+load 4
+box_get
+store 8
+store 7
+load 8
+assert
+load 7
+store 5
+load 5
+extract 112 1
+btoi
+int 0
+==
+assert
+load 5
+extract 104 8
+btoi
+store 6
+global LatestTimestamp
+load 6
+<
+assert
+txn Sender
+global ZeroAddress
+!=
+assert
+txn Sender
+load 5
+extract 0 32
+!=
+assert
+load 4
+load 5
+extract 0 32
+txn Sender
+concat
+load 5
+extract 64 32
+concat
+load 5
+extract 96 8
+concat
+load 5
+extract 104 8
+concat
+int 1
+itob
+concat
+load 5
+int 113
+load 5
+len
+int 113
+-
+extract3
+concat
+box_put
+int 1
+return
+main_l21:
+global GroupSize
+int 2
+==
+assert
+txn GroupIndex
+int 1
+==
+assert
+txn NumAppArgs
+int 4
+==
+assert
+txn NumAccounts
+int 1
+>=
+assert
+gtxn 0 TypeEnum
+int pay
+==
+assert
+gtxn 0 Sender
+txn Sender
+==
+assert
+gtxn 0 Receiver
+global CurrentApplicationAddress
+==
+assert
+txna ApplicationArgs 1
+btoi
+store 1
+txna ApplicationArgs 2
+btoi
+store 2
+load 1
+int 0
+>
+assert
+gtxn 0 Amount
+load 1
+==
+assert
+load 2
+global LatestTimestamp
+>
+assert
+byte "bounty_count"
+app_global_get
+store 0
+byte "bounty_"
+load 0
+itob
+concat
+txn Sender
+int 32
+bzero
+concat
+txna Accounts 0
+concat
+load 1
+itob
+concat
+load 2
+itob
+concat
+int 0
+itob
+concat
+txna ApplicationArgs 3
+concat
+box_put
+byte "bounty_count"
+load 0
+int 1
++
+app_global_put
+int 1
+return
+main_l22:
+int 1
+return
+main_l23:
+int 1
+return
+main_l24:
+int 0
+return
+main_l25:
+byte "bounty_count"
+app_global_get
+int 0
+==
+assert
+int 1
+return
+main_l26:
+byte "bounty_count"
+int 0
+app_global_put
+int 1
+return

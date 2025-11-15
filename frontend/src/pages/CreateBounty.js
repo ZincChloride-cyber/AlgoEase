@@ -30,6 +30,7 @@ const CreateBounty = () => {
     contractState,
     getAccountInfo,
     pendingTransaction,
+    setPendingTransaction,
     clearPendingTransaction,
     checkWalletReady,
     loadContractState,
@@ -104,22 +105,63 @@ const CreateBounty = () => {
       const amountMicro = Math.round(parseFloat(formData.amount) * 1000000);
       const balance = accountInfo?.amount || 0;
 
-      // Reserve for minimum balance and fees (conservative)
-      const reserved = 200000 + 100000; // extra buffer for opt-ins / fees
+      // Get actual minimum balance requirement from account
+      // Minimum balance increases with assets, apps, and boxes
+      const minBalance = accountInfo?.minBalance || 100000; // Default to 0.1 ALGO if not available
+      
+      // Calculate transaction fees
+      // Payment transaction: 0.001 ALGO
+      // App call transaction: 0.001 ALGO (can be higher for complex calls, use 0.002 for safety)
+      const paymentFee = 1000; // 0.001 ALGO
+      const appCallFee = 2000; // 0.002 ALGO (conservative estimate)
+      const totalFees = paymentFee + appCallFee;
+      
+      // Calculate total required: amount + fees + minimum balance
+      // The account must maintain minimum balance even after sending the payment
+      const totalRequired = amountMicro + totalFees + minBalance;
+      
+      // Add a small buffer for safety (0.01 ALGO)
+      const safetyBuffer = 10000; // 0.01 ALGO
+      const totalRequiredWithBuffer = totalRequired + safetyBuffer;
 
-      if (balance < amountMicro + reserved) {
+      console.log('💰 Balance check:', {
+        balance: balance / 1000000,
+        amount: amountMicro / 1000000,
+        minBalance: minBalance / 1000000,
+        fees: totalFees / 1000000,
+        totalRequired: totalRequired / 1000000,
+        totalRequiredWithBuffer: totalRequiredWithBuffer / 1000000,
+        shortfall: Math.max(0, (totalRequiredWithBuffer - balance) / 1000000)
+      });
+
+      if (balance < totalRequiredWithBuffer) {
+        const shortfall = (totalRequiredWithBuffer - balance) / 1000000;
         throw new Error(
-          `Insufficient balance. You need ~${(amountMicro + reserved) / 1000000} ALGO but have ${(
-            balance / 1000000
-          ).toFixed(6)} ALGO in your wallet.`
+          `Insufficient balance. You need ${totalRequiredWithBuffer / 1000000} ALGO (${amountMicro / 1000000} ALGO for bounty + ${totalFees / 1000000} ALGO for fees + ${minBalance / 1000000} ALGO minimum balance) but have ${(balance / 1000000).toFixed(6)} ALGO. ` +
+          `You need ${shortfall.toFixed(6)} more ALGO. ` +
+          `Get testnet ALGOs from: https://bank.testnet.algorand.network/`
         );
       }
 
       // Include title + description on-chain (contract stores task_desc)
       const taskPayload = formData.title ? `${formData.title}\n\n${formData.description}` : formData.description;
 
-      // Stage 2: Signing - createBounty will prompt wallet
-      setProgressStage('signing');
+      // Continue in "preparing" stage - build transactions first
+      console.log('📝 Preparing transactions...');
+      
+      // Clear any pending transaction state (local only - don't disconnect wallet)
+      // Only clear local state to avoid unnecessary wallet disconnection
+      console.log('🧹 Clearing local pending transaction state...');
+      try {
+        // Pass false to avoid disconnecting wallet during normal flow
+        await clearPendingTransaction(false);
+        console.log('✅ Pending state cleared (local only)');
+      } catch (clearError) {
+        console.warn('⚠️ Error clearing pending state (continuing anyway):', clearError);
+      }
+      
+      // Wait a moment to ensure state is fully cleared
+      await new Promise(resolve => setTimeout(resolve, 300));
       
       // Check if wallet is ready before attempting transaction
       try {
@@ -131,15 +173,26 @@ const CreateBounty = () => {
         // Continue anyway - the transaction will fail if wallet is not ready
       }
       
-      // Clear any pending transaction state before attempting new transaction
-      clearPendingTransaction();
+      // Double-check that pending state is still clear
+      // Note: clearPendingTransaction should have handled this, but we check anyway
+      if (pendingTransaction) {
+        console.warn('⚠️ Pending transaction state still set after clear, clearing again...');
+        // Clear again (local only - don't disconnect)
+        setPendingTransaction(false);
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
       
-      // Wait a moment to ensure state is cleared
+      // Now switch to "signing" stage - wallet will open next
+      setProgressStage('signing');
+      
+      // Small delay to ensure UI updates and modal is visible before wallet opens
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // This will handle signing, submitting, and confirming
+      // Now sign and submit transactions (this will open Pera Wallet)
+      // createBounty will handle building, signing, submitting, and confirming
       let txId;
       try {
+        console.log('🔐 Ready to open Pera Wallet for signing...');
         txId = await createBounty(
           parseFloat(formData.amount),
           formData.deadline,
@@ -147,8 +200,8 @@ const CreateBounty = () => {
           verifierAddress
         );
       } catch (txError) {
-        // Always clear pending state on error
-        clearPendingTransaction();
+        // Clear local pending state on error (don't disconnect wallet)
+        setPendingTransaction(false);
         
         // Check for specific error conditions
         if (txError.message && txError.message.includes('cancelled')) {
@@ -158,6 +211,26 @@ const CreateBounty = () => {
           // Clear state and provide helpful error message
           await new Promise(resolve => setTimeout(resolve, 500));
           throw new Error('Another transaction is pending in Pera Wallet. Please complete or cancel it in your wallet app, then try again.');
+        }
+        
+        // Check for insufficient balance error
+        if (txError.message && (txError.message.includes('balance') && txError.message.includes('below min'))) {
+          // Extract balance information from error if possible
+          const balanceMatch = txError.message.match(/balance (\d+)/);
+          const minMatch = txError.message.match(/min (\d+)/);
+          
+          if (balanceMatch && minMatch) {
+            const balance = parseInt(balanceMatch[1]) / 1000000;
+            const minRequired = parseInt(minMatch[1]) / 1000000;
+            const shortfall = minRequired - balance;
+            
+            throw new Error(
+              `Insufficient balance. Your account has ${balance.toFixed(6)} ALGO but needs ${minRequired.toFixed(6)} ALGO to complete this transaction. ` +
+              `You need ${shortfall.toFixed(6)} more ALGO. ` +
+              `This includes the bounty amount, transaction fees, and minimum balance requirement. ` +
+              `Get testnet ALGOs from: https://bank.testnet.algorand.network/`
+            );
+          }
         }
         
         // Log the actual error for debugging
@@ -225,10 +298,23 @@ const CreateBounty = () => {
         console.log('💾 Saving bounty to backend:', JSON.stringify(bountyData, null, 2));
         console.log('🌐 API URL:', process.env.REACT_APP_API_URL || 'http://localhost:5000/api');
         
+        let savedBounty;
         try {
           // First create the bounty in the database (might not have contractId yet)
-          const savedBounty = await apiService.createBounty(bountyData);
+          savedBounty = await apiService.createBounty(bountyData);
           console.log('✅ Bounty saved to backend successfully:', savedBounty);
+          
+          // Store the creation transaction ID
+          if (txId && savedBounty.id) {
+            try {
+              console.log('💾 Storing creation transaction ID in database...');
+              await apiService.updateBountyTransaction(savedBounty.id, txId, 'create');
+              console.log('✅ Creation transaction ID stored successfully');
+            } catch (txError) {
+              console.warn('⚠️ Failed to store creation transaction ID (bounty still saved):', txError);
+              // Don't throw - the bounty is already saved
+            }
+          }
           
           // If we got the bounty ID from the contract, update the database
           if (bountyId !== null && savedBounty.id) {
@@ -244,23 +330,80 @@ const CreateBounty = () => {
           console.error('❌ API call failed:', apiError);
           console.error('❌ Error details:', {
             message: apiError.message,
+            status: apiError.status,
             stack: apiError.stack,
             response: apiError.response
           });
-          throw apiError; // Re-throw to be caught by outer catch
+          
+          // Check if it's a network error or server error
+          if (!apiError.status) {
+            // Network error - backend might be down
+            throw new Error(`Cannot connect to backend server. Please make sure the backend is running at ${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}`);
+          }
+          
+          // If it's a 409 (Conflict) or 200 (already exists), treat as success
+          if (apiError.status === 409 || apiError.status === 200 || apiError.isConflict) {
+            console.log('✅ Bounty already exists in database, this is OK');
+            // Try to get the existing bounty data from the response
+            const existingData = apiError.existingData || apiError.response;
+            if (existingData && (existingData.id || existingData.contractId)) {
+              console.log('✅ Using existing bounty data from response:', existingData);
+              savedBounty = existingData; // Use existing bounty data
+              // Continue with success flow - bounty already exists
+            } else if (bountyId !== null) {
+              // If we can't get the data, try to fetch it by contract_id
+              try {
+                savedBounty = await apiService.getBounty(String(bountyId));
+                console.log('✅ Fetched existing bounty by contract_id:', savedBounty);
+              } catch (fetchError) {
+                console.warn('⚠️ Could not fetch existing bounty, but it exists on-chain');
+                // Create a minimal bounty object for the success flow
+                savedBounty = {
+                  id: null,
+                  contractId: String(bountyId),
+                  ...bountyData
+                };
+              }
+            } else {
+              // Can't proceed without bounty data - but since it exists on-chain, treat as success
+              console.log('✅ Bounty exists on-chain, treating as success even without DB data');
+              // Use the contractId from the response or from bountyId
+              savedBounty = {
+                id: null,
+                contractId: existingData?.contractId || String(bountyId) || null,
+                ...bountyData,
+                exists: true // Mark that it exists
+              };
+            }
+          } else {
+            // Server error - get the error message from response
+            const errorMessage = apiError.response?.message || apiError.response?.error || apiError.message;
+            throw new Error(`Backend error: ${errorMessage}`);
+          }
+        }
+        
+        // If we have savedBounty, continue with success flow
+        if (!savedBounty) {
+          throw new Error('Failed to save or retrieve bounty from database');
         }
       } catch (backendError) {
         console.error('❌ Backend persistence failed:', backendError);
         console.error('❌ Full error object:', backendError);
+        
+        // Set error state and stop the flow
+        setProgressStage('error');
         setSubmitError(
-          `Bounty was created on-chain but failed to save to database: ${backendError.message || 'Unknown error'}. ` +
-          `Please check the browser console and backend logs for details.`
+          `Bounty was created on-chain (Transaction: ${txId}) but failed to save to database: ${backendError.message || 'Unknown error'}. ` +
+          `Please check the browser console and backend logs for details. ` +
+          `You can manually add this bounty to the database using the transaction ID.`
         );
-        // Don't fail the whole flow if backend is down - transaction is already confirmed
-        // But show error to user
+        
+        // Don't redirect - let user see the error
+        setIsSubmitting(false);
+        return; // Exit early - don't continue to completion
       }
 
-      // Stage 6: Complete
+      // Stage 6: Complete - only reached if save was successful
       setProgressStage('complete');
 
       // Clear form
@@ -342,11 +485,16 @@ const CreateBounty = () => {
   };
 
   const handleTryAgain = async () => {
-    // Clear pending transaction state first
-    clearPendingTransaction();
+    // Clear pending transaction state first (local only - don't disconnect)
+    try {
+      await clearPendingTransaction(false);
+      console.log('✅ Cleared pending transaction state');
+    } catch (error) {
+      console.warn('⚠️ Error clearing pending state:', error);
+    }
     
     // Wait a moment for state to clear
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 1000));
     
     // If there's an error about existing bounty and user is authorized, try to handle it
     if (submitError && (
@@ -356,14 +504,15 @@ const CreateBounty = () => {
       // Close modal and retry the entire process
       handleCloseModal();
       // Small delay to ensure modal closes
-      await new Promise(resolve => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 500));
       // Retry the submission
       proceedWithBountyCreation();
     } else if (submitError && (submitError.includes('pending') || submitError.includes('4100'))) {
       // For pending transaction errors, close modal and let user retry
       handleCloseModal();
       // Wait a bit longer for Pera Wallet to clear
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      console.log('🔄 Ready to retry - user can click Deploy Bounty again');
       // User can try again after clearing the pending transaction in their wallet
     } else {
       // Just close the modal for other errors
@@ -401,13 +550,27 @@ const CreateBounty = () => {
         error={submitError}
         onClose={progressStage === 'error' ? handleTryAgain : handleCloseModal}
         onGoToMyBounties={submitError && submitError.includes('not authorized') ? handleGoToMyBounties : null}
-        onClearPending={() => {
-          clearPendingTransaction();
-          console.log('🧹 Cleared pending transaction state from error modal');
-          // Close modal after clearing state
-          setTimeout(() => {
-            handleCloseModal();
-          }, 500);
+        onClearPending={async () => {
+          console.log('🧹 Clearing pending transaction state from error modal (with disconnect)...');
+          try {
+            // Pass true to force disconnect/reconnect when user explicitly requests it
+            await clearPendingTransaction(true);
+            console.log('✅ Pending state cleared successfully');
+            // Close modal after clearing state
+            setShowProgressModal(false);
+            setSubmitError('');
+            setIsSubmitting(false);
+            // Wait a moment before allowing retry
+            setTimeout(() => {
+              console.log('🔄 Ready to retry - user can click Deploy Bounty again');
+            }, 2000);
+          } catch (error) {
+            console.error('❌ Error clearing pending state:', error);
+            // Still close modal even if there's an error
+            setShowProgressModal(false);
+            setSubmitError('');
+            setIsSubmitting(false);
+          }
         }}
         mode={modalMode}
       />
@@ -550,8 +713,8 @@ const CreateBounty = () => {
                 <button
                   type="button"
                   className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg transition-colors uppercase tracking-wider"
-                  onClick={() => {
-                    clearPendingTransaction();
+                  onClick={async () => {
+                    await clearPendingTransaction(false);
                     alert('Pending transaction state cleared. Please try again.');
                   }}
                 >

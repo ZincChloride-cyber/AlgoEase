@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  sequencer:
+    image: polygontechnology/polygon-zkevm-node:latest
+    container_name: 5fba657d-3ea3-486b-a7aa-ebfc6618c6f8-sequencer
+    environment:
+      - CHAIN_ID=5fba657d-3ea3-486b-a7aa-ebfc6618c6f8
+      - RPC_URL=http://localhost:8545
+      - ROLLUP_TYPE=zk-rollup
+    ports:
+      - "8545:8545"
+      - "8546:8546"
+    volumes:
+      - ./data/sequencer:/data
+      - ./config/genesis.json:/config/genesis.json
+      - ./config/cdk-config.json:/config/cdk-config.json
+    networks:
+      - 5fba657d-3ea3-486b-a7aa-ebfc6618c6f8-network
+    restart: unless-stopped
+    command: ["node", "--config", "/config/cdk-config.json"]
+  validator-0:
+    image: polygontechnology/polygon-zkevm-node:latest
+    container_name: 5fba657d-3ea3-486b-a7aa-ebfc6618c6f8-validator-0
+    environment:
+      - CHAIN_ID=5fba657d-3ea3-486b-a7aa-ebfc6618c6f8
+      - NODE_TYPE=validator
+      - VALIDATOR_INDEX=0
+      - ROLLUP_TYPE=zk-rollup
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./data/validator-0:/data
+      - ./config/genesis.json:/config/genesis.json
+      - ./config/cdk-config.json:/config/cdk-config.json
+      - ./config/validators.json:/config/validators.json
+    networks:
+      - 5fba657d-3ea3-486b-a7aa-ebfc6618c6f8-network
+    restart: unless-stopped
+    depends_on:
+      - sequencer
+    command: ["node", "--config", "/config/cdk-config.json", "--validator-index", "0"]
+  validator-1:
+    image: polygontechnology/polygon-zkevm-node:latest
+    container_name: 5fba657d-3ea3-486b-a7aa-ebfc6618c6f8-validator-1
+    environment:
+      - CHAIN_ID=5fba657d-3ea3-486b-a7aa-ebfc6618c6f8
+      - NODE_TYPE=validator
+      - VALIDATOR_INDEX=1
+      - ROLLUP_TYPE=zk-rollup
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./data/validator-1:/data
+      - ./config/genesis.json:/config/genesis.json
+      - ./config/cdk-config.json:/config/cdk-config.json
+      - ./config/validators.json:/config/validators.json
+    networks:
+      - 5fba657d-3ea3-486b-a7aa-ebfc6618c6f8-network
+    restart: unless-stopped
+    depends_on:
+      - sequencer
+    command: ["node", "--config", "/config/cdk-config.json", "--validator-index", "1"]
+  validator-2:
+    image: polygontechnology/polygon-zkevm-node:latest
+    container_name: 5fba657d-3ea3-486b-a7aa-ebfc6618c6f8-validator-2
+    environment:
+      - CHAIN_ID=5fba657d-3ea3-486b-a7aa-ebfc6618c6f8
+      - NODE_TYPE=validator
+      - VALIDATOR_INDEX=2
+      - ROLLUP_TYPE=zk-rollup
+    ports:
+      - "9092:9090"
+    volumes:
+      - ./data/validator-2:/data
+      - ./config/genesis.json:/config/genesis.json
+      - ./config/cdk-config.json:/config/cdk-config.json
+      - ./config/validators.json:/config/validators.json
+    networks:
+      - 5fba657d-3ea3-486b-a7aa-ebfc6618c6f8-network
+    restart: unless-stopped
+    depends_on:
+      - sequencer
+    command: ["node", "--config", "/config/cdk-config.json", "--validator-index", "2"]
+
+
+networks:
+  5fba657d-3ea3-486b-a7aa-ebfc6618c6f8-network:
+    driver: bridge

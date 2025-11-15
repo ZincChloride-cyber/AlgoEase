@@ -10,7 +10,7 @@ require('dotenv').config();
 const ALGOD_SERVER = process.env.ALGOD_SERVER || 'https://testnet-api.algonode.cloud';
 const ALGOD_TOKEN = process.env.ALGOD_TOKEN || '';
 const ALGOD_PORT = process.env.ALGOD_PORT || '';
-const CONTRACT_APP_ID = parseInt(process.env.CONTRACT_APP_ID) || 749335380;
+const CONTRACT_APP_ID = parseInt(process.env.CONTRACT_APP_ID) || 749648617;
 
 // Initialize Algod client
 const algodClient = new algosdk.Algodv2(ALGOD_TOKEN, ALGOD_SERVER, ALGOD_PORT);
@@ -197,6 +197,13 @@ if (require.main === module) {
 }
 
 module.exports = { createRealBounty, getAccountBalance };
+
+
+
+
+
+
+
 
 
 

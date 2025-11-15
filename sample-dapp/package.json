@@ -1,0 +1,18 @@
+{
+  "name": "polyone-sample-dapp",
+  "version": "1.0.0",
+  "description": "Sample dApp for PolyOne deployed chains",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "ethers": "^6.11.0",
+    "vite": "^5.2.0",
+    "@vitejs/plugin-react": "^4.2.0"
+  }
+}
+

@@ -17,6 +17,13 @@ class Bounty {
     this.submissions = data.submissions || [];
     this.created_at = data.created_at || data.createdAt;
     this.updated_at = data.updated_at || data.updatedAt;
+    // Transaction IDs for tracking on-chain transactions
+    this.create_transaction_id = data.create_transaction_id || data.createTransactionId || data.transactionId;
+    this.accept_transaction_id = data.accept_transaction_id || data.acceptTransactionId;
+    this.approve_transaction_id = data.approve_transaction_id || data.approveTransactionId;
+    this.reject_transaction_id = data.reject_transaction_id || data.rejectTransactionId;
+    this.claim_transaction_id = data.claim_transaction_id || data.claimTransactionId;
+    this.refund_transaction_id = data.refund_transaction_id || data.refundTransactionId;
   }
 
   // Convert to object with camelCase for API responses
@@ -36,7 +43,13 @@ class Bounty {
       tags: this.tags,
       submissions: this.submissions,
       createdAt: this.created_at,
-      updatedAt: this.updated_at
+      updatedAt: this.updated_at,
+      createTransactionId: this.create_transaction_id,
+      acceptTransactionId: this.accept_transaction_id,
+      approveTransactionId: this.approve_transaction_id,
+      rejectTransactionId: this.reject_transaction_id,
+      claimTransactionId: this.claim_transaction_id,
+      refundTransactionId: this.refund_transaction_id
     };
   }
 
@@ -53,20 +66,51 @@ class Bounty {
       description: this.description,
       requirements: Array.isArray(this.requirements) ? this.requirements : [],
       tags: Array.isArray(this.tags) ? this.tags : [],
-      submissions: Array.isArray(this.submissions) ? this.submissions : []
+      submissions: Array.isArray(this.submissions) ? this.submissions : [],
+      create_transaction_id: this.create_transaction_id || null,
+      accept_transaction_id: this.accept_transaction_id || null,
+      approve_transaction_id: this.approve_transaction_id || null,
+      reject_transaction_id: this.reject_transaction_id || null,
+      claim_transaction_id: this.claim_transaction_id || null,
+      refund_transaction_id: this.refund_transaction_id || null
     };
     
-    // Only include contract_id if it's not null/undefined/empty string
+    // Only include contract_id if it's not null/undefined/empty string AND is a valid number
     if (this.contract_id !== null && this.contract_id !== undefined && this.contract_id !== '') {
-      dbData.contract_id = this.contract_id;
+      // Validate that contract_id is numeric (bigint in database)
+      const contractIdNum = typeof this.contract_id === 'string' ? parseInt(this.contract_id, 10) : this.contract_id;
+      if (!isNaN(contractIdNum) && isFinite(contractIdNum) && contractIdNum >= 0) {
+        dbData.contract_id = contractIdNum;
+      } else {
+        console.error('❌ Invalid contract_id value:', this.contract_id, '(expected numeric)');
+        // Don't include invalid contract_id - it will cause database errors
+        // This prevents addresses or other strings from being saved as contract_id
+      }
     }
     
-    // Remove undefined values
+    // Remove undefined values and empty strings (convert to null for transaction IDs)
     Object.keys(dbData).forEach(key => {
       if (dbData[key] === undefined) {
         delete dbData[key];
       }
+      // Convert empty strings to null for transaction IDs
+      if (key.includes('transaction_id') && dbData[key] === '') {
+        dbData[key] = null;
+      }
     });
+    
+    // Log transaction IDs being saved
+    if (this.create_transaction_id || this.accept_transaction_id || this.approve_transaction_id || this.reject_transaction_id || 
+        this.claim_transaction_id || this.refund_transaction_id) {
+      console.log('💾 Transaction IDs in toDBFormat:', {
+        create: this.create_transaction_id,
+        accept: this.accept_transaction_id,
+        approve: this.approve_transaction_id,
+        reject: this.reject_transaction_id,
+        claim: this.claim_transaction_id,
+        refund: this.refund_transaction_id
+      });
+    }
     
     return dbData;
   }
@@ -87,7 +131,15 @@ class Bounty {
 
     // Apply filters
     if (filter.contractId) {
-      query = query.eq('contract_id', filter.contractId);
+      // Validate contractId is numeric before querying (contract_id is bigint in database)
+      const contractIdNum = typeof filter.contractId === 'string' ? parseInt(filter.contractId, 10) : filter.contractId;
+      if (!isNaN(contractIdNum) && isFinite(contractIdNum)) {
+        query = query.eq('contract_id', contractIdNum);
+      } else {
+        console.warn('⚠️ Invalid contractId in filter (not numeric):', filter.contractId);
+        // Return empty results if contractId is invalid
+        return [];
+      }
     }
     if (filter.clientAddress) {
       query = query.eq('client_address', filter.clientAddress);
@@ -212,7 +264,15 @@ class Bounty {
     
     // Apply same filters as find() method
     if (filter.contractId) {
-      query = query.eq('contract_id', filter.contractId);
+      // Validate contractId is numeric before querying (contract_id is bigint in database)
+      const contractIdNum = typeof filter.contractId === 'string' ? parseInt(filter.contractId, 10) : filter.contractId;
+      if (!isNaN(contractIdNum) && isFinite(contractIdNum)) {
+        query = query.eq('contract_id', contractIdNum);
+      } else {
+        console.warn('⚠️ Invalid contractId in filter (not numeric):', filter.contractId);
+        // Return 0 count if contractId is invalid
+        return 0;
+      }
     }
     if (filter.clientAddress) {
       query = query.eq('client_address', filter.clientAddress);
@@ -281,6 +341,20 @@ class Bounty {
 
     if (this.id) {
       // Update existing - find by database id first
+      // Log what we're trying to update
+      console.log('💾 Updating bounty with ID:', this.id);
+      console.log('💾 Update data keys:', Object.keys(dbData));
+      if (dbData.accept_transaction_id || dbData.approve_transaction_id || dbData.reject_transaction_id ||
+          dbData.claim_transaction_id || dbData.refund_transaction_id) {
+        console.log('💾 Transaction IDs in update:', {
+          accept: dbData.accept_transaction_id,
+          approve: dbData.approve_transaction_id,
+          reject: dbData.reject_transaction_id,
+          claim: dbData.claim_transaction_id,
+          refund: dbData.refund_transaction_id
+        });
+      }
+      
       const { data, error } = await supabase
         .from('bounties')
         .update(dbData)
@@ -296,6 +370,7 @@ class Bounty {
           details: error.details,
           hint: error.hint
         });
+        console.error('❌ Data being updated:', JSON.stringify(dbData, null, 2));
         throw error;
       }
       
@@ -333,11 +408,16 @@ class Bounty {
       
       if (data) {
         // Update instance with saved data
-        Object.assign(this, new Bounty(data));
-        console.log('✅ Bounty inserted successfully:', this.id, 'Contract ID:', this.contract_id);
+        const savedData = new Bounty(data);
+        Object.assign(this, savedData);
+        console.log('✅ Bounty inserted successfully!');
+        console.log('✅ Database ID:', this.id);
+        console.log('✅ Contract ID:', this.contract_id);
+        console.log('✅ Full saved data:', JSON.stringify(data, null, 2));
       } else {
         console.error('❌ Insert returned no data');
-        throw new Error('Insert operation returned no data');
+        console.error('❌ Insert data sent:', JSON.stringify(insertData, null, 2));
+        throw new Error('Insert operation returned no data - check database connection and table structure');
       }
     }
     return this;

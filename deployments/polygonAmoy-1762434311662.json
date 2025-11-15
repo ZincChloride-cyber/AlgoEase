@@ -1,0 +1,11 @@
+{
+  "network": "polygonAmoy",
+  "chainId": 80002,
+  "deployer": "0x20EF95677aE986b59B35bB5f508916C420701d75",
+  "contracts": {
+    "ChainFactory": "0x7Eb4d5BeC7aabA9e758A50188d6f6581cbE5411c",
+    "ChainRegistry": "0x457e9323366369c04b8e0Db2e409d5E9f3B60252"
+  },
+  "timestamp": "2025-11-06T13:05:10.178Z",
+  "blockNumber": 28688251
+}

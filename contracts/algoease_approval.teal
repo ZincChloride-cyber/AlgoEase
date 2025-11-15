@@ -61,52 +61,52 @@ int 2
 assert
 txna ApplicationArgs 1
 btoi
-store 37
+store 42
 byte "bounty_"
-load 37
+load 42
 itob
 concat
-store 38
-load 38
+store 43
+load 43
 box_get
-store 45
-store 44
-load 45
+store 50
+store 49
+load 50
 assert
+load 49
+store 44
 load 44
-store 39
-load 39
 extract 112 1
 btoi
-store 40
-load 40
+store 45
+load 45
 int 3
 !=
 assert
-load 40
+load 45
 int 4
 !=
 assert
-load 40
+load 45
 int 5
 !=
 assert
-load 39
+load 44
 extract 104 8
 btoi
-store 43
+store 48
 global LatestTimestamp
-load 43
+load 48
 >=
 assert
-load 39
+load 44
 extract 96 8
 btoi
-store 41
-load 39
+store 46
+load 44
 extract 0 32
-store 42
-load 41
+store 47
+load 46
 int 0
 >
 assert
@@ -115,33 +115,35 @@ int pay
 itxn_field TypeEnum
 global CurrentApplicationAddress
 itxn_field Sender
-load 42
+load 47
 itxn_field Receiver
-load 41
+load 46
 itxn_field Amount
 int 0
 itxn_field Fee
 itxn_submit
-load 38
-load 42
-load 39
+load 43
+load 44
+extract 0 32
+load 44
 extract 32 32
 concat
-load 39
+load 44
 extract 64 32
 concat
-load 39
+load 44
 extract 96 8
 concat
-load 39
+load 44
 extract 104 8
 concat
 int 4
 itob
+extract 7 1
 concat
-load 39
+load 44
 int 113
-load 39
+load 44
 len
 int 113
 -
@@ -157,61 +159,61 @@ int 2
 assert
 txna ApplicationArgs 1
 btoi
-store 28
+store 33
 byte "bounty_"
-load 28
+load 33
 itob
 concat
-store 29
-load 29
+store 34
+load 34
 box_get
-store 36
-store 35
-load 36
+store 41
+store 40
+load 41
 assert
+load 40
+store 35
 load 35
-store 30
-load 30
 extract 112 1
 btoi
-store 31
-load 31
+store 36
+load 36
 int 3
 !=
 assert
-load 31
+load 36
 int 4
 !=
 assert
-load 31
+load 36
 int 5
 !=
 assert
-load 30
+load 35
 extract 104 8
 btoi
-store 34
+store 39
 global LatestTimestamp
-load 34
+load 39
 <
 assert
-load 30
+load 35
 extract 0 32
-store 33
+store 38
 txn Sender
-load 33
+load 38
 ==
 txn Sender
-load 30
+load 35
 extract 64 32
 ==
 ||
 assert
-load 30
+load 35
 extract 96 8
 btoi
-store 32
-load 32
+store 37
+load 37
 int 0
 >
 assert
@@ -220,33 +222,35 @@ int pay
 itxn_field TypeEnum
 global CurrentApplicationAddress
 itxn_field Sender
-load 33
+load 38
 itxn_field Receiver
-load 32
+load 37
 itxn_field Amount
 int 0
 itxn_field Fee
 itxn_submit
-load 29
-load 33
-load 30
+load 34
+load 35
+extract 0 32
+load 35
 extract 32 32
 concat
-load 30
+load 35
 extract 64 32
 concat
-load 30
+load 35
 extract 96 8
 concat
-load 30
+load 35
 extract 104 8
 concat
 int 4
 itob
+extract 7 1
 concat
-load 30
+load 35
 int 113
-load 30
+load 35
 len
 int 113
 -
@@ -262,38 +266,38 @@ int 2
 assert
 txna ApplicationArgs 1
 btoi
-store 21
+store 26
 byte "bounty_"
-load 21
+load 26
 itob
 concat
-store 22
-load 22
-box_get
 store 27
-store 26
 load 27
+box_get
+store 32
+store 31
+load 32
 assert
-load 26
-store 23
-load 23
+load 31
+store 28
+load 28
 extract 112 1
 btoi
 int 2
 ==
 assert
-load 23
+load 28
 extract 32 32
-store 25
-load 23
+store 30
+load 28
 extract 96 8
 btoi
-store 24
+store 29
 txn Sender
-load 25
+load 30
 ==
 assert
-load 24
+load 29
 int 0
 >
 assert
@@ -302,33 +306,35 @@ int pay
 itxn_field TypeEnum
 global CurrentApplicationAddress
 itxn_field Sender
-load 25
+load 30
 itxn_field Receiver
-load 24
+load 29
 itxn_field Amount
 int 0
 itxn_field Fee
 itxn_submit
-load 22
-load 23
+load 27
+load 28
 extract 0 32
-load 25
+load 28
+extract 32 32
 concat
-load 23
+load 28
 extract 64 32
 concat
-load 23
+load 28
 extract 96 8
 concat
-load 23
+load 28
 extract 104 8
 concat
 int 3
 itob
+extract 7 1
 concat
-load 23
+load 28
 int 113
-load 23
+load 28
 len
 int 113
 -
@@ -344,44 +350,45 @@ int 2
 assert
 txna ApplicationArgs 1
 btoi
-store 14
+store 18
 byte "bounty_"
-load 14
+load 18
 itob
 concat
-store 15
-load 15
-box_get
-store 20
 store 19
-load 20
-assert
 load 19
-store 16
-load 16
+box_get
+store 25
+store 24
+load 25
+assert
+load 24
+store 20
+load 20
 extract 112 1
 btoi
 int 1
 ==
 assert
-txn Sender
-load 16
+load 20
 extract 0 32
+store 22
+load 20
+extract 64 32
+store 23
+txn Sender
+load 22
 ==
 txn Sender
-load 16
-extract 64 32
+load 23
 ==
 ||
 assert
-load 16
-extract 0 32
-store 18
-load 16
+load 20
 extract 96 8
 btoi
-store 17
-load 17
+store 21
+load 21
 int 0
 >
 assert
@@ -390,33 +397,35 @@ int pay
 itxn_field TypeEnum
 global CurrentApplicationAddress
 itxn_field Sender
-load 18
+load 22
 itxn_field Receiver
-load 17
+load 21
 itxn_field Amount
 int 0
 itxn_field Fee
 itxn_submit
-load 15
-load 18
-load 16
+load 19
+load 20
+extract 0 32
+load 20
 extract 32 32
 concat
-load 16
+load 20
 extract 64 32
 concat
-load 16
+load 20
 extract 96 8
 concat
-load 16
+load 20
 extract 104 8
 concat
 int 5
 itob
+extract 7 1
 concat
-load 16
+load 20
 int 113
-load 16
+load 20
 len
 int 113
 -
@@ -440,11 +449,11 @@ concat
 store 10
 load 10
 box_get
-store 13
-store 12
-load 13
+store 17
+store 16
+load 17
 assert
-load 12
+load 16
 store 11
 load 11
 extract 112 1
@@ -452,24 +461,28 @@ btoi
 int 1
 ==
 assert
-txn Sender
 load 11
 extract 0 32
-==
-txn Sender
+store 14
+load 11
+extract 32 32
+store 13
 load 11
 extract 64 32
+store 15
+txn Sender
+load 14
+==
+txn Sender
+load 15
 ==
 ||
 assert
 load 11
-extract 32 32
-store 14
-load 11
 extract 96 8
 btoi
-store 15
-load 15
+store 12
+load 12
 int 0
 >
 assert
@@ -478,9 +491,9 @@ int pay
 itxn_field TypeEnum
 global CurrentApplicationAddress
 itxn_field Sender
-load 14
+load 13
 itxn_field Receiver
-load 15
+load 12
 itxn_field Amount
 int 0
 itxn_field Fee
@@ -502,6 +515,7 @@ extract 104 8
 concat
 int 3
 itob
+extract 7 1
 concat
 load 11
 int 113
@@ -574,6 +588,7 @@ extract 104 8
 concat
 int 1
 itob
+extract 7 1
 concat
 load 5
 int 113
@@ -654,6 +669,7 @@ itob
 concat
 int 0
 itob
+extract 7 1
 concat
 txna ApplicationArgs 3
 concat

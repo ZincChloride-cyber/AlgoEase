@@ -589,6 +589,23 @@ export const WalletProvider = ({ children }) => {
     }
   };
 
+  // Verify contract connection on mount
+  useEffect(() => {
+    const verifyContract = async () => {
+      try {
+        if (contractUtils.getAppId()) {
+          const connection = await contractUtils.verifyConnection();
+          console.log('[WalletContext] Contract connected:', connection);
+        } else {
+          console.warn('[WalletContext] Contract App ID not set');
+        }
+      } catch (error) {
+        console.error('[WalletContext] Contract verification failed:', error);
+      }
+    };
+    verifyContract();
+  }, []);
+
   // Smart contract functions
   const loadContractState = useCallback(async () => {
     if (!contractUtils.getAppId()) {
@@ -640,7 +657,7 @@ export const WalletProvider = ({ children }) => {
         console.warn('Unable to refresh contract state before creating bounty:', stateError);
       }
 
-      // Build transactions
+      // Build transactions (this doesn't open wallet yet)
       const txns = await contractUtils.createBounty(
         account,
         amount,
@@ -649,14 +666,22 @@ export const WalletProvider = ({ children }) => {
         verifierAddress
       );
 
+      // Small delay to ensure UI is ready before opening wallet
+      await new Promise(resolve => setTimeout(resolve, 300));
+
       // Sign transaction group (user will see wallet prompt here)
+      console.log('🔐 Opening Pera Wallet for signing...');
       const signedTxns = await signTransactionGroup(txns);
+      
+      console.log('✅ Transactions signed, submitting to blockchain...');
 
       // Submit transaction group to blockchain
       const txId = await contractUtils.submitTransactionGroup(signedTxns);
+      console.log('✅ Transaction submitted, waiting for confirmation...');
       
       // Wait for confirmation on blockchain
       await contractUtils.waitForConfirmation(txId);
+      console.log('✅ Transaction confirmed on blockchain');
       
       // Reload contract state
       await loadContractState();
@@ -836,12 +861,56 @@ export const WalletProvider = ({ children }) => {
   };
 
   // Force clear pending transaction state
-  const clearPendingTransaction = useCallback(() => {
-    console.log('🧹 Manually clearing pending transaction state');
+  // Only clears local state - does NOT disconnect wallet unless explicitly requested
+  const clearPendingTransaction = useCallback(async (forceDisconnect = false) => {
+    console.log('🧹 Clearing pending transaction state', forceDisconnect ? '(with disconnect)' : '(local only)');
+    
+    // Clear local pending state immediately
     setPendingTransaction(false);
-    // Also try to reset any wallet-side state by disconnecting and reconnecting
-    // But don't disconnect if wallet is connected - just clear our state
-  }, []);
+    
+    // Wait a moment to ensure state is cleared
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    // Only disconnect/reconnect if explicitly requested (e.g., from error recovery)
+    if (forceDisconnect && peraWallet && isConnected) {
+      try {
+        console.log('🔄 Force disconnect requested - resetting Pera Wallet connection...');
+        
+        try {
+          await peraWallet.disconnect();
+          console.log('✅ Disconnected from Pera Wallet');
+          
+          // Wait for disconnect to complete
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Reconnect if we had an account
+          if (account) {
+            console.log('🔄 Reconnecting to Pera Wallet...');
+            try {
+              const newAccounts = await peraWallet.connect();
+              if (newAccounts && newAccounts.length > 0) {
+                setAccount(newAccounts[0]);
+                setIsConnected(true);
+                console.log('✅ Reconnected to Pera Wallet');
+                // Wait a moment for connection to stabilize
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+            } catch (reconnectError) {
+              console.warn('⚠️ Error reconnecting (user may need to reconnect manually):', reconnectError);
+              setIsConnected(false);
+              setAccount(null);
+            }
+          }
+        } catch (disconnectError) {
+          console.warn('⚠️ Error disconnecting:', disconnectError);
+        }
+      } catch (error) {
+        console.warn('⚠️ Error during force disconnect:', error);
+      }
+    }
+    
+    console.log('✅ Pending transaction state cleared');
+  }, [peraWallet, isConnected, account]);
 
   // Check if Pera Wallet is ready (no pending transactions)
   const checkWalletReady = useCallback(async () => {
@@ -874,6 +943,7 @@ export const WalletProvider = ({ children }) => {
     getAccountInfo,
     algodClient,
     pendingTransaction,
+    setPendingTransaction,
     clearPendingTransaction,
     checkWalletReady,
     // Smart contract functions

@@ -9,7 +9,7 @@
     "@testing-library/user-event": "^14.5.2",
     "@walletconnect/qrcode-modal": "^1.7.0",
     "@walletconnect/web3-provider": "^1.8.0",
-    "algosdk": "^2.6.0",
+    "algosdk": "^3.0.0",
     "lute-connect": "^1.6.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
@@ -37,7 +37,8 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "dev": "react-scripts start"
+    "dev": "react-scripts start",
+    "vercel-build": "npm run build"
   },
   "eslintConfig": {
     "extends": [

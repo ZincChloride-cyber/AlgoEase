@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-
-const CONTRACT_APP_ID = parseInt(process.env.REACT_APP_CONTRACT_APP_ID, 10) || 749599170;
+import contractUtils from '../utils/contractUtils';
+import algosdk from 'algosdk/dist/browser/algosdk.min.js';
 
 const highlightStats = [
   { label: 'Avg settlement', value: '4.5s', detail: 'Payment confirmation on Algorand TestNet' },
@@ -59,6 +59,62 @@ const container = {
 };
 
 const Home = () => {
+  const [contractInfo, setContractInfo] = useState({
+    appId: contractUtils.getAppId() || 749648617,
+    address: contractUtils.getAppAddress() || 'W7Z5VWO4V5MNXSS4HCMHQSCIH373NLTAP5IPSNTIQZP6J3XFT6PNEE6KWA'
+  });
+
+  useEffect(() => {
+    // Force correct values - reject any old contract IDs
+    const CORRECT_APP_ID = 749648617;
+    const CORRECT_ADDRESS = 'W7Z5VWO4V5MNXSS4HCMHQSCIH373NLTAP5IPSNTIQZP6J3XFT6PNEE6KWA';
+    const OLD_IDS = [749646001, 749599170, 749540140, 749335380];
+    
+    // Force re-initialization of contractUtils
+    contractUtils.initializeContract();
+    
+    // Always use correct values - reject any old IDs
+    let appId = parseInt(process.env.REACT_APP_CONTRACT_APP_ID, 10) || CORRECT_APP_ID;
+    let address = process.env.REACT_APP_CONTRACT_ADDRESS || CORRECT_ADDRESS;
+    
+    // Check contractUtils, but reject old IDs
+    const utilsAppId = contractUtils.getAppId();
+    if (utilsAppId && !OLD_IDS.includes(utilsAppId)) {
+      appId = utilsAppId;
+    }
+    
+    // Reject old contract IDs
+    if (OLD_IDS.includes(appId)) {
+      console.warn('[Home] Detected old contract ID, using correct one');
+      appId = CORRECT_APP_ID;
+    }
+    
+    // Reject old addresses
+    if (address && address.includes('K2M726DQ')) {
+      console.warn('[Home] Detected old contract address, using correct one');
+      address = CORRECT_ADDRESS;
+    }
+    
+    // Update contractUtils with correct values
+    contractUtils.setAppId(appId);
+    
+    // Calculate address from app ID if needed
+    if (!address || !address.includes('L5GY7SCG')) {
+      address = algosdk.getApplicationAddress(appId);
+    }
+    
+    setContractInfo({ appId, address });
+    
+    // Log for debugging
+    console.log('[Home] Contract info loaded:', { 
+      appId, 
+      address: address ? `${address.slice(0, 8)}...${address.slice(-8)}` : 'N/A',
+      envAppId: process.env.REACT_APP_CONTRACT_APP_ID,
+      envAddress: process.env.REACT_APP_CONTRACT_ADDRESS ? 'Set' : 'Not set',
+      isCorrect: appId === CORRECT_APP_ID && address.includes('W7Z5VWO')
+    });
+  }, []);
+
   return (
     <div className="space-y-24 pb-16">
       <motion.section
@@ -122,7 +178,11 @@ const Home = () => {
               <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 text-sm text-white/65 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.32em] text-white/40">Contract app id</p>
-                  <p className="mt-1 text-lg font-semibold text-white">{CONTRACT_APP_ID}</p>
+                  <p className="mt-1 text-lg font-semibold text-white">{contractInfo.appId}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.32em] text-white/40">Contract address</p>
+                  <p className="mt-1 text-xs font-mono text-white/70">{contractInfo.address ? `${contractInfo.address.slice(0, 8)}...${contractInfo.address.slice(-8)}` : 'Loading...'}</p>
                 </div>
                 <div>
                   <p className="text-xs uppercase tracking-[0.32em] text-white/40">Network</p>

@@ -47,7 +47,7 @@ const CREATOR_MNEMONIC = process.env.REACT_APP_CREATOR_MNEMONIC ||
 const APP_ID = contractInfo.appId || 
                process.env.REACT_APP_CONTRACT_APP_ID || 
                contractEnv.REACT_APP_CONTRACT_APP_ID || 
-               749599170;
+               749646001;
 
 const FUND_AMOUNT_ALGO = parseFloat(process.env.FUND_AMOUNT || '0.01'); // Default 0.01 ALGO
 const FUND_AMOUNT_MICROALGO = Math.round(FUND_AMOUNT_ALGO * 1000000);

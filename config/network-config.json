@@ -1,0 +1,44 @@
+{
+  "networks": {
+    "polygon-mainnet": {
+      "chainId": 137,
+      "name": "Polygon Mainnet",
+      "rpcUrl": "https://polygon-rpc.com",
+      "explorerUrl": "https://polygonscan.com",
+      "aggLayerUrl": "https://agglayer.polygon.technology"
+    },
+    "polygon-amoy": {
+      "chainId": 80002,
+      "name": "Polygon Amoy Testnet",
+      "rpcUrl": "https://rpc-amoy.polygon.technology",
+      "explorerUrl": "https://amoy.polygonscan.com",
+      "aggLayerUrl": "https://agglayer-testnet.polygon.technology"
+    }
+  },
+  "deployment": {
+    "defaultRegion": "us-east-1",
+    "supportedCloudProviders": ["aws", "gcp", "azure"],
+    "defaultValidators": 3,
+    "minValidators": 1,
+    "maxValidators": 100,
+    "defaultBlockTime": 2,
+    "defaultGasLimit": 20000000
+  },
+  "monitoring": {
+    "prometheusPort": 9090,
+    "grafanaPort": 3000,
+    "metricsInterval": 15,
+    "alerting": {
+      "enabled": true,
+      "slackWebhook": "",
+      "emailRecipients": []
+    }
+  },
+  "bridge": {
+    "minBridgeAmount": "0.01",
+    "maxBridgeAmount": "1000000",
+    "bridgeFee": "0.001",
+    "confirmationBlocks": 12
+  }
+}
+

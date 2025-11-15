@@ -1,0 +1,119 @@
+{
+  "templates": [
+    {
+      "id": "zkrollup-public",
+      "name": "zkRollup Public Chain",
+      "description": "High-security public chain with zero-knowledge proofs",
+      "recommended": true,
+      "config": {
+        "chainType": "public",
+        "rollupType": "zk-rollup",
+        "validatorAccess": "public",
+        "blockTime": 2,
+        "gasLimit": 20000000,
+        "consensus": "PoS",
+        "dataAvailability": "rollup"
+      },
+      "pricing": {
+        "setupFee": 499,
+        "monthlyHosting": 299,
+        "validatorCost": 50
+      }
+    },
+    {
+      "id": "validium-private",
+      "name": "Validium Private Chain",
+      "description": "Off-chain data availability for maximum privacy",
+      "config": {
+        "chainType": "private",
+        "rollupType": "validium",
+        "validatorAccess": "permissioned",
+        "blockTime": 1,
+        "gasLimit": 30000000,
+        "consensus": "PoA",
+        "dataAvailability": "validium"
+      },
+      "pricing": {
+        "setupFee": 999,
+        "monthlyHosting": 599,
+        "validatorCost": 100
+      }
+    },
+    {
+      "id": "optimistic-gaming",
+      "name": "Optimistic Rollup for Gaming",
+      "description": "Low-cost, high-throughput chain optimized for gaming",
+      "config": {
+        "chainType": "public",
+        "rollupType": "optimistic-rollup",
+        "validatorAccess": "public",
+        "blockTime": 1,
+        "gasLimit": 50000000,
+        "consensus": "PoS",
+        "dataAvailability": "rollup"
+      },
+      "pricing": {
+        "setupFee": 399,
+        "monthlyHosting": 249,
+        "validatorCost": 40
+      }
+    },
+    {
+      "id": "enterprise-zkrollup",
+      "name": "Enterprise zkRollup",
+      "description": "Full-featured enterprise chain with advanced security",
+      "config": {
+        "chainType": "permissioned",
+        "rollupType": "zk-rollup",
+        "validatorAccess": "permissioned",
+        "blockTime": 2,
+        "gasLimit": 40000000,
+        "consensus": "PoA",
+        "dataAvailability": "rollup",
+        "features": {
+          "customGovernance": true,
+          "privateTransactions": true,
+          "advancedMonitoring": true,
+          "slaGuarantees": true
+        }
+      },
+      "pricing": {
+        "setupFee": 2999,
+        "monthlyHosting": 1499,
+        "validatorCost": 150
+      }
+    }
+  ],
+  "features": {
+    "rollupTypes": {
+      "zk-rollup": {
+        "name": "zkRollup",
+        "description": "Zero-knowledge rollup with cryptographic proofs for maximum security",
+        "security": "high",
+        "finality": "instant",
+        "gasEfficiency": "medium"
+      },
+      "optimistic-rollup": {
+        "name": "Optimistic Rollup",
+        "description": "Assumes transactions are valid by default, with fraud proofs for disputes",
+        "security": "medium",
+        "finality": "~7 days",
+        "gasEfficiency": "high"
+      },
+      "validium": {
+        "name": "Validium",
+        "description": "Off-chain data availability with on-chain validity proofs",
+        "security": "high",
+        "finality": "instant",
+        "gasEfficiency": "very high",
+        "privacy": "high"
+      }
+    },
+    "chainTypes": {
+      "public": "Open to anyone, fully decentralized",
+      "private": "Restricted access, enterprise-controlled",
+      "permissioned": "Hybrid model with approved participants"
+    }
+  }
+}
+

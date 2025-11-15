@@ -191,7 +191,10 @@ router.post('/', async (req, res, next) => {
       submissions: [],
       // contractId will be set after smart contract creation
       // If provided, use it; otherwise, it will be null and updated later
-      contractId: req.body.contractId || null
+      contractId: req.body.contractId || null,
+      // Store transaction ID if provided (from frontend after on-chain creation)
+      transactionId: req.body.transactionId || null,
+      createTransactionId: req.body.transactionId || req.body.createTransactionId || null
     };
 
     console.log('💾 Bounty data to save:', bountyData);
@@ -236,56 +239,214 @@ router.post('/', async (req, res, next) => {
       });
     }
 
-    const bounty = new Bounty(bountyData);
-    console.log('📦 Bounty object created, saving to database...');
+    // Check if bounty with this contract_id already exists
+    let existingBounty = null;
+    if (bountyData.contractId) {
+      try {
+        existingBounty = await Bounty.findOne({ contractId: bountyData.contractId });
+        if (existingBounty) {
+          console.log('⚠️ Bounty with contract_id already exists, updating instead of creating:', bountyData.contractId);
+        }
+      } catch (findError) {
+        console.warn('⚠️ Error checking for existing bounty:', findError);
+        // Continue with creation attempt
+      }
+    }
+    
+    let savedBounty;
+    let verifyBounty = null;
     
     try {
-      await bounty.save();
-      console.log('✅ Bounty saved successfully with ID:', bounty.id, 'Contract ID:', bounty.contract_id);
+      if (existingBounty) {
+        // Update existing bounty instead of creating new one
+        console.log('📝 Updating existing bounty with contract_id:', bountyData.contractId);
+        
+        // Update fields that might have changed
+        if (bountyData.title) existingBounty.title = bountyData.title;
+        if (bountyData.description) existingBounty.description = bountyData.description;
+        if (bountyData.amount) existingBounty.amount = bountyData.amount;
+        if (bountyData.deadline) existingBounty.deadline = bountyData.deadline;
+        if (bountyData.clientAddress) {
+          existingBounty.client_address = bountyData.clientAddress;
+          existingBounty.clientAddress = bountyData.clientAddress;
+        }
+        if (bountyData.verifierAddress) {
+          existingBounty.verifier_address = bountyData.verifierAddress;
+          existingBounty.verifierAddress = bountyData.verifierAddress;
+        }
+        // Don't overwrite status if it's already set (might be accepted, etc.)
+        if (bountyData.status && existingBounty.status === 'open') {
+          existingBounty.status = bountyData.status;
+        }
+        
+        savedBounty = await existingBounty.save();
+        console.log('✅ Existing bounty updated successfully!');
+      } else {
+        // Create new bounty
+        const bounty = new Bounty(bountyData);
+        console.log('📦 Bounty object created, saving to database...');
+        console.log('📦 Bounty data:', JSON.stringify(bountyData, null, 2));
+        
+        savedBounty = await bounty.save();
+        console.log('✅ Bounty saved successfully!');
+      }
+      
+      console.log('✅ Bounty ID:', savedBounty.id);
+      console.log('✅ Contract ID:', savedBounty.contract_id);
+      console.log('✅ Client Address:', savedBounty.client_address);
+      console.log('✅ Status:', savedBounty.status);
+      
+      // Verify the save by querying the database
+      try {
+        verifyBounty = await Bounty.findById(savedBounty.id);
+        if (!verifyBounty) {
+          console.error('❌ WARNING: Bounty was saved but cannot be retrieved from database!');
+          throw new Error('Bounty save verification failed - bounty not found after save');
+        }
+        console.log('✅ Bounty save verified - can be retrieved from database');
+      } catch (verifyError) {
+        console.error('❌ Error verifying saved bounty:', verifyError);
+        // Don't fail the request if verification fails - the save might have succeeded
+        // but there could be a delay in Supabase replication
+        console.warn('⚠️ Continuing despite verification error - bounty may have been saved');
+      }
     } catch (saveError) {
       console.error('❌ Error saving bounty to database:', saveError);
       console.error('❌ Save error details:', {
         message: saveError.message,
         code: saveError.code,
         details: saveError.details,
-        hint: saveError.hint
+        hint: saveError.hint,
+        stack: saveError.stack
       });
       
-      // If it's a duplicate contract_id error, return a more helpful message
+      // If it's a duplicate contract_id error, try to find and return existing bounty
       if (saveError.code === '23505' || saveError.message.includes('duplicate') || saveError.message.includes('unique')) {
-        return res.status(409).json({ 
-          error: 'Bounty already exists',
-          message: 'A bounty with this contract ID already exists in the database'
+        console.log('🔄 Duplicate contract_id detected, attempting to find existing bounty...');
+        try {
+          if (bountyData.contractId) {
+            const existingBounty = await Bounty.findOne({ contractId: bountyData.contractId });
+            if (existingBounty) {
+              console.log('✅ Found existing bounty with contract_id:', bountyData.contractId);
+              // Return the existing bounty as success (idempotent operation)
+              const existingBountyData = existingBounty.toObject ? existingBounty.toObject() : existingBounty;
+              return res.status(200).json({
+                ...existingBountyData,
+                message: 'Bounty with this contract ID already exists, returning existing bounty',
+                smartContract: {
+                  action: 'create_bounty',
+                  required: {
+                    payment: {
+                      amount: existingBounty.amount,
+                      to: process.env.REACT_APP_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS || 'YGKN4WYULCTVLA6JHY6XEVKV2LQF4A5DOCEJWGUNGMUHIZQANLO4JGFFEQ',
+                      note: 'AlgoEase: Bounty Payment'
+                    },
+                    appCall: {
+                      method: 'create_bounty',
+                      args: [
+                        Math.round(existingBounty.amount * 1000000),
+                        Math.floor(new Date(existingBounty.deadline).getTime() / 1000),
+                        (existingBounty.title ? `${existingBounty.title}\n\n${existingBounty.description}` : existingBounty.description).slice(0, 1000)
+                      ],
+                      accounts: [existingBounty.verifierAddress || existingBounty.clientAddress]
+                    }
+                  }
+                }
+              });
+            }
+          }
+        } catch (findError) {
+          console.error('❌ Error finding existing bounty:', findError);
+        }
+        
+        // Even if we can't find it in the catch block, try one more time
+        // This handles race conditions where the bounty was just created
+        try {
+          if (bountyData.contractId) {
+            const retryBounty = await Bounty.findOne({ contractId: bountyData.contractId });
+            if (retryBounty) {
+              console.log('✅ Found existing bounty on retry:', bountyData.contractId);
+              const retryBountyData = retryBounty.toObject ? retryBounty.toObject() : retryBounty;
+              return res.status(200).json({
+                ...retryBountyData,
+                message: 'Bounty with this contract ID already exists, returning existing bounty',
+                smartContract: {
+                  action: 'create_bounty',
+                  required: {
+                    payment: {
+                      amount: retryBounty.amount,
+                      to: process.env.REACT_APP_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS || 'YGKN4WYULCTVLA6JHY6XEVKV2LQF4A5DOCEJWGUNGMUHIZQANLO4JGFFEQ',
+                      note: 'AlgoEase: Bounty Payment'
+                    },
+                    appCall: {
+                      method: 'create_bounty',
+                      args: [
+                        Math.round(retryBounty.amount * 1000000),
+                        Math.floor(new Date(retryBounty.deadline).getTime() / 1000),
+                        (retryBounty.title ? `${retryBounty.title}\n\n${retryBounty.description}` : retryBounty.description).slice(0, 1000)
+                      ],
+                      accounts: [retryBounty.verifierAddress || retryBounty.clientAddress]
+                    }
+                  }
+                }
+              });
+            }
+          }
+        } catch (retryError) {
+          console.error('❌ Error on retry finding existing bounty:', retryError);
+        }
+        
+        // Last resort: return 200 with minimal data so frontend can continue
+        return res.status(200).json({
+          contractId: bountyData.contractId,
+          message: 'Bounty with this contract ID already exists in the database',
+          exists: true
         });
       }
       
-      throw saveError;
+      // Return detailed error for debugging
+      return res.status(500).json({
+        error: 'Database save failed',
+        message: saveError.message,
+        details: process.env.NODE_ENV === 'development' ? {
+          code: saveError.code,
+          hint: saveError.hint,
+          details: saveError.details
+        } : undefined
+      });
     }
 
+    // Use the saved bounty for response (use verified data if available, otherwise use saved)
+    const savedBountyData = (verifyBounty && verifyBounty.toObject) ? verifyBounty.toObject() : savedBounty.toObject();
+    
     const responseData = {
-      ...bounty.toObject(),
+      ...savedBountyData,
       smartContract: {
         action: 'create_bounty',
         required: {
           payment: {
-            amount: bounty.amount,
-            to: process.env.CONTRACT_ADDRESS || 'contract_address', // Use contract address from env
+            amount: savedBounty.amount,
+            to: process.env.REACT_APP_CONTRACT_ADDRESS || process.env.CONTRACT_ADDRESS || 'YGKN4WYULCTVLA6JHY6XEVKV2LQF4A5DOCEJWGUNGMUHIZQANLO4JGFFEQ', // V4 Contract escrow address
             note: 'AlgoEase: Bounty Payment'
           },
           appCall: {
             method: 'create_bounty',
             args: [
-              Math.round(bounty.amount * 1000000), // Convert to microALGO
-              Math.floor(new Date(bounty.deadline).getTime() / 1000), // Convert to timestamp
-              (bounty.title ? `${bounty.title}\n\n${bounty.description}` : bounty.description).slice(0, 1000) // Task description
+              Math.round(savedBounty.amount * 1000000), // Convert to microALGO
+              Math.floor(new Date(savedBounty.deadline).getTime() / 1000), // Convert to timestamp
+              (savedBounty.title ? `${savedBounty.title}\n\n${savedBounty.description}` : savedBounty.description).slice(0, 1000) // Task description
             ],
-            accounts: [bounty.verifierAddress || bounty.clientAddress]
+            accounts: [savedBounty.verifierAddress || savedBounty.clientAddress]
           }
         }
       }
     };
 
-    console.log('📤 Sending response:', responseData);
+    console.log('📤 Sending response with saved bounty data:', {
+      id: responseData.id,
+      contractId: responseData.contractId,
+      status: responseData.status
+    });
     res.status(201).json(responseData);
   } catch (error) {
     console.error('❌ Error creating bounty:', error);
@@ -307,28 +468,54 @@ router.post('/', async (req, res, next) => {
 // Update bounty (only by client)
 router.put('/:id', authenticate, async (req, res) => {
   try {
-    const bounty = await Bounty.findOne({ contractId: req.params.id });
+    // Try to find by contract_id first, then by database id
+    let bounty = await Bounty.findOne({ contractId: req.params.id });
+    if (!bounty) {
+      bounty = await Bounty.findById(req.params.id);
+    }
     
     if (!bounty) {
       return res.status(404).json({ error: 'Bounty not found' });
     }
 
-    if (bounty.clientAddress !== req.user.address) {
+    // Allow update if client address matches OR if updating contract_id (for post-creation sync)
+    const isUpdatingContractId = req.body.contractId && !bounty.contract_id && !bounty.contractId;
+    const clientAddr = (bounty.clientAddress || bounty.client_address || '').toUpperCase().trim();
+    const userAddr = (req.user?.address || '').toUpperCase().trim();
+    
+    if (!isUpdatingContractId && clientAddr !== userAddr) {
       return res.status(403).json({ error: 'Not authorized to update this bounty' });
     }
 
-    if (bounty.status !== 'open') {
+    if (bounty.status !== 'open' && !isUpdatingContractId) {
       return res.status(400).json({ error: 'Cannot update bounty that is not open' });
     }
 
     // Update bounty fields
-    Object.assign(bounty, req.body);
+    if (req.body.contractId) {
+      bounty.contract_id = req.body.contractId;
+      bounty.contractId = req.body.contractId;
+    }
+    if (req.body.status) {
+      bounty.status = req.body.status;
+    }
+    // Allow other fields to be updated
+    Object.keys(req.body).forEach(key => {
+      if (key !== 'contractId' && key !== 'id' && key !== 'contract_id') {
+        const snakeKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+        if (bounty.hasOwnProperty(snakeKey) || bounty.hasOwnProperty(key)) {
+          bounty[snakeKey] = req.body[key];
+          bounty[key] = req.body[key];
+        }
+      }
+    });
+    
     await bounty.save();
 
     res.json(bounty.toObject ? bounty.toObject() : bounty);
   } catch (error) {
     console.error('Error updating bounty:', error);
-    res.status(500).json({ error: 'Failed to update bounty' });
+    res.status(500).json({ error: 'Failed to update bounty', message: error.message });
   }
 });
 
@@ -467,8 +654,24 @@ router.post('/:id/accept', authenticate, async (req, res) => {
     const { id } = req.params;
     console.log('📥 Accepting bounty with ID:', id);
     
-    // Try to find by contract_id first, then by database id
-    let bounty = await Bounty.findOne({ contractId: id });
+    // Validate that id is not an address (addresses are 58 chars, UUIDs are 36, contract IDs are numeric)
+    // If it looks like an address, it's definitely not a valid ID
+    if (id && id.length === 58 && /^[A-Z2-7]{58}$/.test(id)) {
+      return res.status(400).json({ 
+        error: 'Invalid bounty ID',
+        message: 'The provided ID appears to be an Algorand address, not a bounty ID. Please use the bounty database ID or contract ID.'
+      });
+    }
+    
+    // Try to find by contract_id first (only if id is numeric), then by database id
+    let bounty = null;
+    const contractIdNum = parseInt(id, 10);
+    if (!isNaN(contractIdNum) && isFinite(contractIdNum)) {
+      // id is numeric, try finding by contract_id
+      bounty = await Bounty.findOne({ contractId: contractIdNum });
+    }
+    
+    // If not found by contract_id, try by database id (UUID)
     if (!bounty) {
       bounty = await Bounty.findById(id);
     }
@@ -520,9 +723,20 @@ router.post('/:id/accept', authenticate, async (req, res) => {
       }
     }
 
-    // Validate contract ID exists
-    if (!bounty.contract_id && !bounty.contractId) {
+    // Validate contract ID exists and is numeric
+    const contractId = bounty.contract_id || bounty.contractId;
+    if (!contractId) {
       return res.status(400).json({ error: 'Bounty does not have a contract ID. Please wait for the contract to be created.' });
+    }
+    
+    // Ensure contract_id is numeric (not an address or string)
+    const validatedContractId = typeof contractId === 'string' ? parseInt(contractId, 10) : contractId;
+    if (isNaN(validatedContractId) || !isFinite(validatedContractId)) {
+      console.error('❌ Invalid contract_id in bounty:', contractId, '(expected numeric)');
+      return res.status(400).json({ 
+        error: 'Invalid contract ID',
+        message: 'The bounty has an invalid contract ID. Please contact support.'
+      });
     }
 
     // Update bounty with freelancer - ensure both camelCase and snake_case are set
@@ -530,16 +744,20 @@ router.post('/:id/accept', authenticate, async (req, res) => {
     console.log('💾 Setting freelancer address:', {
       address: freelancerAddr,
       bountyId: id,
+      contractId: validatedContractId,
       currentFreelancer: bounty.freelancerAddress || bounty.freelancer_address
     });
     
+    // Ensure contract_id is set correctly (numeric)
+    bounty.contract_id = validatedContractId;
+    bounty.contractId = validatedContractId;
     bounty.freelancerAddress = freelancerAddr;
     bounty.freelancer_address = freelancerAddr;
     bounty.status = 'accepted';
     
     console.log('💾 Bounty before save:', {
       id: bounty.id,
-      contractId: bounty.contract_id || bounty.contractId,
+      contractId: bounty.contract_id,
       freelancerAddress: bounty.freelancerAddress,
       freelancer_address: bounty.freelancer_address,
       status: bounty.status
@@ -548,7 +766,14 @@ router.post('/:id/accept', authenticate, async (req, res) => {
     await bounty.save();
     
     // Reload to verify it was saved correctly
-    const savedBounty = await Bounty.findOne({ contractId: id }) || await Bounty.findById(id);
+    let savedBounty = null;
+    if (!isNaN(validatedContractId) && isFinite(validatedContractId)) {
+      savedBounty = await Bounty.findOne({ contractId: validatedContractId });
+    }
+    if (!savedBounty) {
+      savedBounty = await Bounty.findById(bounty.id);
+    }
+    
     console.log('✅ Bounty after save:', {
       id: savedBounty?.id,
       contractId: savedBounty?.contract_id || savedBounty?.contractId,
@@ -557,15 +782,15 @@ router.post('/:id/accept', authenticate, async (req, res) => {
       status: savedBounty?.status
     });
 
-    const contractId = bounty.contract_id || bounty.contractId;
     res.json({
       message: 'Bounty accepted successfully',
+      bounty: savedBounty ? (savedBounty.toObject ? savedBounty.toObject() : savedBounty) : null,
       smartContract: {
         action: 'accept_bounty',
         required: {
           appCall: {
             method: 'accept_bounty',
-            args: [contractId],
+            args: [validatedContractId], // Use validated numeric contract ID
             accounts: []
           }
         }
@@ -574,6 +799,102 @@ router.post('/:id/accept', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Error accepting bounty:', error);
     res.status(500).json({ error: 'Failed to accept bounty', message: error.message });
+  }
+});
+
+// Update transaction ID for a bounty action
+router.patch('/:id/transaction', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { transactionId, action } = req.body; // action: 'accept', 'approve', 'reject', 'claim', 'refund'
+    
+    if (!transactionId || !action) {
+      return res.status(400).json({ error: 'transactionId and action are required' });
+    }
+    
+    // Validate action
+    const validActions = ['create', 'accept', 'approve', 'reject', 'claim', 'refund'];
+    if (!validActions.includes(action)) {
+      return res.status(400).json({ error: `Invalid action. Must be one of: ${validActions.join(', ')}` });
+    }
+    
+    // Find bounty
+    let bounty = null;
+    const contractIdNum = parseInt(id, 10);
+    if (!isNaN(contractIdNum) && isFinite(contractIdNum)) {
+      bounty = await Bounty.findOne({ contractId: contractIdNum });
+    }
+    if (!bounty) {
+      bounty = await Bounty.findById(id);
+    }
+    
+    if (!bounty) {
+      return res.status(404).json({ error: 'Bounty not found' });
+    }
+    
+    // Update the appropriate transaction ID field
+    const transactionFieldMap = {
+      'create': 'create_transaction_id',
+      'accept': 'accept_transaction_id',
+      'approve': 'approve_transaction_id',
+      'reject': 'reject_transaction_id',
+      'claim': 'claim_transaction_id',
+      'refund': 'refund_transaction_id'
+    };
+    
+    const fieldName = transactionFieldMap[action];
+    
+    console.log('💾 Updating transaction ID:', {
+      bountyId: id,
+      action: action,
+      fieldName: fieldName,
+      transactionId: transactionId,
+      currentValue: bounty[fieldName]
+    });
+    
+    bounty[fieldName] = transactionId;
+    
+    // Also set camelCase version for consistency
+    const camelCaseField = fieldName.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
+    bounty[camelCaseField] = transactionId;
+    
+    console.log('💾 Bounty object before save:', {
+      id: bounty.id,
+      [fieldName]: bounty[fieldName],
+      [camelCaseField]: bounty[camelCaseField]
+    });
+    
+    await bounty.save();
+    
+    // Reload to verify it was saved
+    const updatedBounty = await Bounty.findById(bounty.id);
+    
+    console.log('✅ Transaction ID saved:', {
+      fieldName: fieldName,
+      savedValue: updatedBounty ? updatedBounty[fieldName] : 'NOT FOUND',
+      bountyId: updatedBounty?.id
+    });
+    
+    res.json({
+      message: `Transaction ID updated for ${action}`,
+      transactionId: transactionId,
+      action: action,
+      bounty: updatedBounty ? (updatedBounty.toObject ? updatedBounty.toObject() : updatedBounty) : null
+    });
+  } catch (error) {
+    console.error('❌ Error updating transaction ID:', error);
+    console.error('❌ Error details:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      stack: error.stack
+    });
+    res.status(500).json({ 
+      error: 'Failed to update transaction ID', 
+      message: error.message,
+      details: error.details || error.hint
+    });
   }
 });
 

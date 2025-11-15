@@ -86,12 +86,20 @@ const BountyDetail = () => {
 
   const actions = useMemo(() => {
     if (!bounty || !isConnected) return [];
-    // Use contractId if available, otherwise try to parse id
-    // For API calls, use the database ID (id) or contractId
-    const apiBountyId = bounty.contractId || id;
+    // For API calls, always use the database ID (id) - this is the UUID from the database
+    // For contract calls, we need the numeric contractId
+    const apiBountyId = id; // Always use database ID for API calls
     // For contract calls, we need a numeric contractId
     const contractBountyId = bounty.contractId ? parseInt(bounty.contractId) : null;
     const hasValidContractId = contractBountyId !== null && !isNaN(contractBountyId);
+    
+    console.log('🔍 Bounty ID mapping:', {
+      dbId: id,
+      bountyContractId: bounty.contractId,
+      contractBountyId: contractBountyId,
+      hasValidContractId: hasValidContractId,
+      bountyObject: bounty
+    });
     
     // Normalize addresses for comparison (case-insensitive)
     const accountNormalized = (account || '').toUpperCase().trim();
@@ -125,19 +133,41 @@ const BountyDetail = () => {
           } catch (apiError) {
             console.error('❌ API error:', apiError);
             throw new Error(`Failed to update backend: ${apiError.message || 'Unknown error'}`);
-          } finally {
-            // Restore original token
-            if (originalToken) {
-              apiService.setAuthToken(originalToken);
-            } else {
-              apiService.removeAuthToken();
-            }
           }
           
           // Then call contract
           console.log('📤 Calling smart contract to accept bounty with contract ID:', contractBountyId);
           const txId = await acceptBounty(contractBountyId);
           console.log('✅ Contract transaction successful:', txId);
+          
+          // Store transaction ID in database (auth token still set from above)
+          if (txId) {
+            try {
+              console.log('💾 Storing transaction ID in database...');
+              console.log('💾 Using bounty ID:', id, 'for transaction update');
+              // Use the database ID (id) not contractId for the API call
+              await apiService.updateBountyTransaction(id, txId, 'accept');
+              console.log('✅ Transaction ID stored successfully');
+            } catch (txError) {
+              console.error('❌ Failed to store transaction ID:', txError);
+              console.error('❌ Error details:', {
+                message: txError.message,
+                status: txError.status,
+                response: txError.response
+              });
+              // Don't throw - the transaction succeeded on-chain, this is just metadata
+            }
+          } else {
+            console.warn('⚠️ No transaction ID returned from acceptBounty');
+          }
+          
+          // Restore original token after all API calls
+          if (originalToken) {
+            apiService.setAuthToken(originalToken);
+          } else {
+            apiService.removeAuthToken();
+          }
+          
           return txId;
         },
         style: 'btn-primary',
@@ -152,7 +182,16 @@ const BountyDetail = () => {
 
           // Contract requires numeric contractId
           if (!hasValidContractId) {
-            throw new Error('This bounty does not have a valid contract ID. It may not have been deployed to the smart contract yet.');
+            throw new Error(
+              `This bounty does not have a valid contract ID.\n\n` +
+              `Database ID: ${id}\n` +
+              `Contract ID: ${bounty.contractId || 'Not set'}\n\n` +
+              `The bounty may not have been deployed to the smart contract yet, or the contract ID may be missing from the database.\n\n` +
+              `Please check:\n` +
+              `- The bounty was successfully created on-chain\n` +
+              `- The contract ID was saved to the database\n` +
+              `- Try refreshing the page or recreating the bounty`
+            );
           }
 
           // Set auth token for API call
@@ -166,18 +205,159 @@ const BountyDetail = () => {
           } catch (apiError) {
             console.error('❌ API error:', apiError);
             throw new Error(`Failed to update backend: ${apiError.message || 'Unknown error'}`);
-          } finally {
+          }
+          // Verify bounty exists on contract before attempting approval
+          // First check if we have freelancer address in database (bounty was accepted)
+          const dbFreelancerAddress = bounty.freelancerAddress || bounty.freelancer_address;
+          if (!dbFreelancerAddress) {
+            throw new Error(
+              `Bounty has not been accepted yet.\n\n` +
+              `A freelancer must accept the bounty before it can be approved.\n` +
+              `Current status: ${bounty.status}\n\n` +
+              `Please wait for a freelancer to accept the bounty.`
+            );
+          }
+          
+          console.log('🔍 Verifying bounty exists on contract before approval...');
+          let bountyData = null;
+          let boxReadFailed = false;
+          
+          try {
+            // First, check contract state to see how many bounties exist
+            let contractBountyCount = null;
+            try {
+              const contractState = await contractUtils.getContractState();
+              contractBountyCount = contractState['bounty_count'] || contractState[GLOBAL_STATE_KEYS.BOUNTY_COUNT] || 0;
+              console.log(`[BountyDetail] Contract has ${contractBountyCount} bounties (IDs 0-${contractBountyCount - 1})`);
+            } catch (stateError) {
+              console.warn('[BountyDetail] Could not get contract state:', stateError);
+            }
+            
+            try {
+              bountyData = await contractUtils.getBountyFromBox(contractBountyId);
+            } catch (boxError) {
+              boxReadFailed = true;
+              console.warn('⚠️ Could not read bounty box, but continuing with database data:', boxError.message);
+              
+              // If box doesn't exist but we have database data, we can still proceed
+              // The contract will handle the transaction, and if the box doesn't exist, it will fail there
+              if (contractBountyCount !== null && contractBountyId >= contractBountyCount) {
+                // Bounty ID is out of range
+                throw new Error(
+                  `Bounty ID ${contractBountyId} does not exist.\n\n` +
+                  `The contract only has ${contractBountyCount} bounties (IDs 0-${contractBountyCount - 1}).\n\n` +
+                  `Please verify the bounty ID in the database matches the on-chain bounty ID.`
+                );
+              }
+              
+              // If box read failed but bounty ID is valid, warn but continue
+              console.warn('⚠️ Box read failed, but proceeding with approval using database freelancer address');
+              console.warn('⚠️ The contract transaction may fail if the box truly doesn\'t exist');
+            }
+            
+            // If we got bounty data from box, verify it
+            if (bountyData) {
+              if (!bountyData.freelancerAddress) {
+                throw new Error(
+                  `Bounty exists but has not been accepted yet.\n\n` +
+                  `A freelancer must accept the bounty before it can be approved.\n` +
+                  `Current status: ${bountyData.status}\n\n` +
+                  `Please wait for a freelancer to accept the bounty.`
+                );
+              }
+              
+              // Verify freelancer address matches database
+              if (bountyData.freelancerAddress !== dbFreelancerAddress) {
+                console.warn('⚠️ Freelancer address mismatch:', {
+                  database: dbFreelancerAddress,
+                  onChain: bountyData.freelancerAddress
+                });
+              }
+              
+              console.log('✅ Bounty verified on contract:', {
+                bountyId: contractBountyId,
+                freelancer: bountyData.freelancerAddress,
+                status: bountyData.status
+              });
+            } else if (boxReadFailed) {
+              // Box read failed but we have database data - proceed with warning
+              console.warn('⚠️ Proceeding with approval using database freelancer address:', dbFreelancerAddress);
+              console.warn('⚠️ Note: Box verification failed, but transaction will be attempted');
+            }
+          } catch (verifyError) {
+            console.error('❌ Bounty verification failed:', verifyError);
+            // If it's already a formatted error, throw it as-is
+            if (verifyError.message?.includes('Bounty not found') || 
+                verifyError.message?.includes('has not been accepted') ||
+                verifyError.message?.includes('does not exist')) {
+              throw verifyError;
+            }
+            // Otherwise, provide a generic error
+            throw new Error(
+              `Failed to verify bounty on blockchain: ${verifyError.message}\n\n` +
+              `Please check:\n` +
+              `- The bounty was successfully created on-chain\n` +
+              `- The contract ID matches: ${contractUtils.getAppId()} (V4)\n` +
+              `- The bounty ID is correct: ${contractBountyId}`
+            );
+          }
+          
+          // Then call contract (transfers funds directly to freelancer)
+          console.log('📤 Calling smart contract to approve bounty with contract ID:', contractBountyId);
+          try {
+            const txId = await approveBounty(contractBountyId);
+            console.log('✅ Contract transaction successful:', txId);
+            
+            // Store transaction ID in database
+            if (txId) {
+              try {
+                console.log('💾 Storing transaction ID in database...');
+                console.log('💾 Using bounty ID:', id, 'for transaction update');
+                // Use the database ID (id) not contractId for the API call
+                await apiService.updateBountyTransaction(id, txId, 'approve');
+                console.log('✅ Transaction ID stored successfully');
+              } catch (txError) {
+                console.error('❌ Failed to store transaction ID:', txError);
+                console.error('❌ Error details:', {
+                  message: txError.message,
+                  status: txError.status,
+                  response: txError.response
+                });
+                // Don't throw - the transaction succeeded on-chain, this is just metadata
+              }
+            } else {
+              console.warn('⚠️ No transaction ID returned from approveBounty');
+            }
+            
+            // Restore original token after all API calls
             if (originalToken) {
               apiService.setAuthToken(originalToken);
             } else {
               apiService.removeAuthToken();
             }
+            
+            return txId;
+          } catch (contractError) {
+            // Restore original token on error too
+            if (originalToken) {
+              apiService.setAuthToken(originalToken);
+            } else {
+              apiService.removeAuthToken();
+            }
+            console.error('❌ Contract error:', contractError);
+            // Provide more helpful error message
+            if (contractError.message?.includes('Failed to read bounty data')) {
+              throw new Error(
+                `Failed to approve bounty: ${contractError.message}\n\n` +
+                `This usually means:\n` +
+                `- The bounty may not exist on the smart contract yet\n` +
+                `- The contract ID (${bounty.contractId}) may be incorrect\n` +
+                `- The bounty may need to be recreated\n\n` +
+                `Please check the bounty details and try again.`
+              );
+            }
+            throw contractError;
           }
-          // Then call contract (transfers funds directly to freelancer)
-          console.log('📤 Calling smart contract to approve bounty with contract ID:', contractBountyId);
-          const txId = await approveBounty(contractBountyId);
-          console.log('✅ Contract transaction successful:', txId);
-          return txId;
         },
         style: 'btn-primary',
       },
@@ -340,7 +520,36 @@ const BountyDetail = () => {
       });
     } catch (error) {
       console.error(`Failed to ${action} bounty:`, error);
-      alert(`Failed to ${action} bounty: ${error.message}`);
+      
+      // Provide more helpful error messages
+      let errorMessage = error.message || 'Unknown error occurred';
+      
+      // Check for pending transaction error
+      if (errorMessage.toLowerCase().includes('pending') && errorMessage.toLowerCase().includes('pera wallet')) {
+        errorMessage = 'Another transaction is pending in Pera Wallet.\n\n' +
+          'How to fix this:\n' +
+          '1. Open your Pera Wallet mobile app (or browser extension)\n' +
+          '2. Check for any pending transaction requests\n' +
+          '3. Either approve or cancel the pending transaction\n' +
+          '4. Wait a few seconds, then try again\n\n' +
+          'Tip: Make sure your Pera Wallet is unlocked and connected.';
+      } else if (errorMessage.toLowerCase().includes('unavailable account')) {
+        errorMessage = 'Smart contract cannot access required account.\n\n' +
+          'This may happen if:\n' +
+          '1. The bounty has not been accepted yet (for approve/reject actions)\n' +
+          '2. The bounty data is corrupted\n\n' +
+          'Please refresh the page and try again. If the issue persists, contact support.';
+      } else if (errorMessage.toLowerCase().includes('reject') || errorMessage.toLowerCase().includes('cancel')) {
+        errorMessage = 'Transaction was cancelled. You can try again when ready.';
+      } else if (errorMessage.toLowerCase().includes('insufficient')) {
+        errorMessage = 'Insufficient funds to complete this transaction.\n\n' +
+          'Make sure you have enough ALGO to cover:\n' +
+          '• The transaction amount\n' +
+          '• Transaction fees (~0.001 ALGO)\n' +
+          '• Minimum balance requirement (0.1 ALGO)';
+      }
+      
+      alert(`Failed to ${action} bounty:\n\n${errorMessage}`);
     } finally {
       setActionLoading(false);
     }

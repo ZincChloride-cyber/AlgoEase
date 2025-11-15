@@ -128,11 +128,19 @@ const TransactionProgressModal = ({ isOpen, stage, txId, error, onClose, onGoToM
                   {onClearPending && (
                     <button
                       type="button"
-                      onClick={() => {
-                        onClearPending();
-                        setTimeout(() => {
+                      onClick={async () => {
+                        try {
+                          // Call the clear pending handler (which is async)
+                          if (typeof onClearPending === 'function') {
+                            await onClearPending();
+                          }
+                        } catch (error) {
+                          console.error('Error clearing pending state:', error);
+                          // Still close the modal even if there's an error
+                          if (onClose) {
                           onClose();
-                        }, 500);
+                          }
+                        }
                       }}
                       className="mt-3 w-full rounded-lg bg-yellow-600 hover:bg-yellow-700 px-4 py-2 text-xs font-semibold text-white transition-colors"
                     >
